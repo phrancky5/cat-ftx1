@@ -33,7 +33,145 @@
       <div class="conn-status" :class="state.connected ? 'status-ok' : 'status-off'">
         {{ state.connected ? `● Connected — ${state.port}` : '○ Disconnected' }}
       </div>
+
+      <!-- Quick-run macro dropdown -->
+      <div class="macro-quickrun" ref="macroQuickRunEl">
+        <button
+          class="btn btn-ghost btn-sm"
+          :disabled="macroRunBusy"
+          @click="toggleMacroDropdown"
+          :title="state.connected ? 'Run a saved macro' : 'Connect to run macros'"
+        >▶ Run<span class="macro-quickrun-caret">▾</span></button>
+        <div v-if="macroDropdownOpen" class="macro-quickrun-menu">
+          <div class="macro-quickrun-head">
+            Saved macros
+            <span v-if="!state.connected" class="macro-quickrun-disabled-hint">(connect to run)</span>
+          </div>
+          <ul v-if="quickMacros.length > 0">
+            <li
+              v-for="m in quickMacros"
+              :key="m.id"
+              class="macro-quickrun-item"
+            >
+              <button
+                class="macro-quickrun-run"
+                :disabled="!state.connected || macroRunBusy"
+                @click="runMacroById(m.id)"
+              >▶ {{ m.name }} <small>({{ m.step_count }})</small></button>
+              <button
+                class="macro-quickrun-edit"
+                title="Edit macro"
+                @click="openMacroBuilder(m.id)"
+              >✎</button>
+            </li>
+          </ul>
+          <div v-else class="macro-quickrun-empty">No macros yet</div>
+          <div class="macro-quickrun-foot">
+            <button class="macro-quickrun-new" @click="openMacroBuilder()">+ New macro / open builder</button>
+          </div>
+        </div>
+      </div>
+
+      <button
+        class="btn btn-ghost btn-icon"
+        @click="showMacroBuilder = true"
+        title="Open Macro Builder"
+        aria-label="Open Macro Builder"
+      >☰</button>
+
+      <button
+        class="btn btn-ghost btn-icon"
+        @click="showSettings = true"
+        title="Appearance settings"
+        aria-label="Appearance settings"
+      >⚙</button>
     </header>
+
+    <!-- ── Macro Builder drawer ── -->
+    <MacroBuilder
+      v-if="showMacroBuilder"
+      :open-macro-id="builderTargetId"
+      @close="closeMacroBuilder"
+      @saved="onMacroSaved"
+    />
+
+    <!-- ── Macro toast ── -->
+    <div v-if="macroToast" class="macro-toast" :class="macroToast.kind">
+      {{ macroToast.text }}
+    </div>
+
+    <!-- ── Appearance settings drawer ── -->
+    <div v-if="showSettings" class="settings-overlay" @click.self="showSettings = false">
+      <aside class="settings-panel" role="dialog" aria-label="Appearance settings">
+        <header class="settings-header">
+          <h2>Appearance</h2>
+          <button class="settings-close" @click="showSettings = false" aria-label="Close">✕</button>
+        </header>
+
+        <div class="settings-body">
+          <p class="settings-hint">
+            Edit the CSS custom properties below. Changes apply live and are
+            saved on this device only (localStorage).
+          </p>
+
+          <section class="settings-section">
+            <h3>Colors</h3>
+            <div v-for="key in COLOR_VARS" :key="key" class="settings-row">
+              <label :for="`theme-${key}`">{{ key }}</label>
+              <input
+                :id="`theme-${key}`"
+                type="color"
+                :value="themeValue(key)"
+                @input="setThemeVar(key, ($event.target as HTMLInputElement).value)"
+              >
+              <input
+                type="text"
+                class="settings-hex"
+                :value="themeValue(key)"
+                spellcheck="false"
+                maxlength="7"
+                @change="setThemeVar(key, ($event.target as HTMLInputElement).value)"
+              >
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <h3>Layout</h3>
+            <div class="settings-row">
+              <label for="theme-radius">--radius</label>
+              <input
+                id="theme-radius"
+                type="range"
+                min="0"
+                max="24"
+                step="1"
+                :value="themeRadiusPx"
+                @input="setThemeVar('--radius', ($event.target as HTMLInputElement).value + 'px')"
+              >
+              <span class="settings-val">{{ themeValue('--radius') }}</span>
+            </div>
+            <div class="settings-row settings-row--wide">
+              <label for="theme-font">--font-mono</label>
+              <select
+                id="theme-font"
+                class="settings-select"
+                :value="themeValue('--font-mono')"
+                @change="setThemeVar('--font-mono', ($event.target as HTMLSelectElement).value)"
+              >
+                <option v-for="f in FONT_OPTIONS" :key="f.value" :value="f.value">{{ f.label }}</option>
+              </select>
+            </div>
+          </section>
+        </div>
+
+        <footer class="settings-footer">
+          <span class="settings-foot-hint">
+            {{ Object.keys(themeOverrides).length }} override(s) active
+          </span>
+          <button class="btn btn-ghost" @click="resetTheme">Reset to defaults</button>
+        </footer>
+      </aside>
+    </div>
 
     <!-- ── Error banner ── -->
     <div v-if="lastError" class="error-banner">
@@ -595,11 +733,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import SMeter from '~/components/SMeter.vue'
 import LevelBar from '~/components/LevelBar.vue'
 import StatusBadge from '~/components/StatusBadge.vue'
 import PresetButton from '~/components/PresetButton.vue'
+import MacroBuilder from '~/components/MacroBuilder.vue'
 
 // ----------- state -----------
 
@@ -780,6 +919,214 @@ const antSelectBusy = ref(false)
 const rxModeBusy = ref(false)
 const splitBusy = ref(false)
 const savedChannels = ref<ChannelConfig[]>([])
+
+// ── Appearance / theme settings ─────────────────────────────────────────
+// Default values match the `:root` block at the top of the <style> section.
+// Keeping them duplicated here (rather than reading the computed style)
+// lets `resetTheme()` work even after `setProperty` has been called.
+const THEME_DEFAULTS: Record<string, string> = {
+  '--bg':            '#0d1117',
+  '--surface':       '#161b22',
+  '--surface2':      '#21262d',
+  '--border':        '#505152',
+  '--text':          '#e6edf3',
+  '--text-muted':    '#8b949e',
+  '--accent':        '#58a6ff',
+  '--green':         '#3fb950',
+  '--red':           '#f85149',
+  '--yellow':        '#d29922',
+  '--vfo-card-main': '#161b22',
+  '--vfo-card-sub':  '#161b22',
+  '--radius':        '8px',
+  '--font-mono':     "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+}
+
+const COLOR_VARS = [
+  '--bg', '--surface', '--surface2', '--border',
+  '--text', '--text-muted',
+  '--accent', '--green', '--red', '--yellow',
+  '--vfo-card-main', '--vfo-card-sub',
+] as const
+
+const FONT_OPTIONS = [
+  { value: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace", label: 'SF Mono / Fira Code (default)' },
+  { value: "'Cascadia Code', monospace",                          label: 'Cascadia Code' },
+  { value: "'Fira Code', monospace",                              label: 'Fira Code' },
+  { value: "'JetBrains Mono', monospace",                         label: 'JetBrains Mono' },
+  { value: "Consolas, monospace",                                 label: 'Consolas' },
+  { value: "'Courier New', monospace",                            label: 'Courier New' },
+  { value: "monospace",                                           label: 'System default' },
+]
+
+const THEME_STORAGE_KEY = 'cat_theme'
+const showSettings = ref(false)
+const themeOverrides = ref<Record<string, string>>({})
+
+function themeValue(key: string): string {
+  return themeOverrides.value[key] ?? THEME_DEFAULTS[key] ?? ''
+}
+
+const themeRadiusPx = computed(() => {
+  const v = themeValue('--radius')
+  const n = parseInt(v, 10)
+  return Number.isFinite(n) ? n : 8
+})
+
+function setThemeVar(key: string, raw: string): void {
+  let value = String(raw ?? '').trim()
+  if (!value) return
+  if ((COLOR_VARS as readonly string[]).includes(key)) {
+    if (!/^#[0-9a-fA-F]{6}$/.test(value)) return // ignore invalid hex
+    value = value.toLowerCase()
+  }
+  if (value === THEME_DEFAULTS[key]) {
+    delete themeOverrides.value[key]
+  } else {
+    themeOverrides.value[key] = value
+  }
+  applyTheme()
+  persistTheme()
+}
+
+function applyTheme(): void {
+  if (typeof document === 'undefined') return
+  const root = document.documentElement
+  for (const key of Object.keys(THEME_DEFAULTS)) {
+    const override = themeOverrides.value[key]
+    if (override != null) {
+      root.style.setProperty(key, override)
+    } else {
+      // No override → let the :root rule in <style> govern this variable.
+      root.style.removeProperty(key)
+    }
+  }
+}
+
+function persistTheme(): void {
+  try {
+    if (Object.keys(themeOverrides.value).length === 0) {
+      localStorage.removeItem(THEME_STORAGE_KEY)
+    } else {
+      localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(themeOverrides.value))
+    }
+  } catch { /* localStorage unavailable */ }
+}
+
+function resetTheme(): void {
+  themeOverrides.value = {}
+  applyTheme()
+  persistTheme()
+}
+
+function loadTheme(): void {
+  try {
+    const raw = localStorage.getItem(THEME_STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object') {
+        themeOverrides.value = parsed as Record<string, string>
+      }
+    }
+  } catch { /* localStorage unavailable or invalid */ }
+  applyTheme()
+}
+
+// ── Macros (Phase 2) ────────────────────────────────────────────────────
+interface MacroSummary {
+  id: number
+  name: string
+  description: string | null
+  step_count: number
+}
+interface MacroRunResults {
+  ok: boolean
+  results: Array<{
+    position: number
+    raw_command: string
+    ok: boolean
+    awaited: boolean
+    response?: string | null
+    error?: string
+  }>
+}
+
+const showMacroBuilder  = ref(false)
+const builderTargetId   = ref<number | null>(null)
+const macroDropdownOpen = ref(false)
+const macroQuickRunEl   = ref<HTMLElement | null>(null)
+const quickMacros       = ref<MacroSummary[]>([])
+const macroRunBusy      = ref(false)
+const macroToast        = ref<{ text: string; kind: 'ok' | 'err' } | null>(null)
+let   macroToastTimer: ReturnType<typeof setTimeout> | null = null
+
+async function loadQuickMacros() {
+  try {
+    const r = await $fetch<{ macros: MacroSummary[] }>('/api/macros')
+    quickMacros.value = r.macros
+  } catch { /* keep stale list on failure */ }
+}
+
+function toggleMacroDropdown() {
+  if (macroDropdownOpen.value) {
+    closeMacroDropdown()
+  } else {
+    macroDropdownOpen.value = true
+    loadQuickMacros()
+  }
+}
+function closeMacroDropdown() { macroDropdownOpen.value = false }
+
+function onGlobalMousedownForMacroDropdown(e: MouseEvent) {
+  if (!macroDropdownOpen.value) return
+  const el = macroQuickRunEl.value
+  if (el && !el.contains(e.target as Node)) closeMacroDropdown()
+}
+watch(macroDropdownOpen, (open) => {
+  if (open) document.addEventListener('mousedown', onGlobalMousedownForMacroDropdown)
+  else      document.removeEventListener('mousedown', onGlobalMousedownForMacroDropdown)
+})
+
+function openMacroBuilder(macroId: number | null = null) {
+  builderTargetId.value = macroId
+  showMacroBuilder.value = true
+  closeMacroDropdown()
+}
+function closeMacroBuilder() {
+  showMacroBuilder.value = false
+  builderTargetId.value = null
+  loadQuickMacros() // refresh dropdown after editing
+}
+function onMacroSaved() {
+  // builder emits 'saved' after every successful save/delete
+  loadQuickMacros()
+}
+
+function showMacroToast(text: string, kind: 'ok' | 'err' = 'ok') {
+  if (macroToastTimer) clearTimeout(macroToastTimer)
+  macroToast.value = { text, kind }
+  macroToastTimer = setTimeout(() => { macroToast.value = null; macroToastTimer = null }, 4000)
+}
+
+async function runMacroById(id: number) {
+  const m = quickMacros.value.find((x) => x.id === id)
+  const name = m?.name ?? `#${id}`
+  macroRunBusy.value = true
+  closeMacroDropdown()
+  try {
+    const r = await $fetch<MacroRunResults>(`/api/macros/${id}/run`, { method: 'POST', body: {} })
+    const failed = r.results.filter((s) => !s.ok)
+    if (r.ok) {
+      showMacroToast(`✓ "${name}" ran (${r.results.length} step${r.results.length === 1 ? '' : 's'})`, 'ok')
+    } else {
+      const first = failed[0]
+      showMacroToast(`✕ "${name}" failed at step ${first ? first.position + 1 : '?'}: ${first?.error ?? 'unknown'}`, 'err')
+    }
+  } catch (e: any) {
+    showMacroToast(`✕ run "${name}": ${e?.data?.statusMessage ?? e?.message ?? 'failed'}`, 'err')
+  } finally {
+    macroRunBusy.value = false
+  }
+}
 
 function loadChannels() {
   try {
@@ -1088,9 +1435,13 @@ const scopeLevelDisplay = computed(() => {
 })
 
 const scopeLevelFillStyle = computed(() => {
+  // Radio reports `level` 0..120 (0.5 dB steps → -30..+30 dB; centre = 60).
+  // Map to a bipolar [-50%, +50%] fill around the track's 50 % centre line.
   const l = state.value.scope?.level ?? 60
   const center = 50 // %
-  const pct = ((l - 0) / 30) * 50 // -50..+50 %
+  let pct = ((l - 60) / 60) * 50 // -50..+50 %
+  if (pct >  50) pct =  50
+  if (pct < -50) pct = -50
   if (pct >= 0) return { left: center + '%', width: pct + '%', background: 'linear-gradient(90deg,#f59e0b,#fcd34d)' }
   return { left: (center + pct) + '%', width: (-pct) + '%', background: 'linear-gradient(270deg,#f59e0b,#fcd34d)' }
 })
@@ -1438,8 +1789,11 @@ async function pollStatus() {
  */
 function startEventSource() {
   stopEventSource()
-  const config = useRuntimeConfig()
-  const es = new EventSource(config.public.serialEventsUrl)
+
+  // Same-origin SSE through the Nuxt proxy. Nuxt adds the per-launch
+  // Bearer token server-side so it never enters the browser, and the
+  // IP allowlist middleware gates the connection.
+  const es = new EventSource('/api/events')
 
   es.onmessage = (e) => {
     try {
@@ -1814,11 +2168,11 @@ async function sendManualCommand() {
   const cmd = manualCmd.value.trim()
   if (!cmd) return
   try {
-    const data = await $fetch<{ response: string; state: TransceiverState }>('/api/command', {
-      method: 'POST',
-      body: { command: cmd },
-    })
-    manualResponse.value = data.response
+    const data = await $fetch<{ response: string | null; state: TransceiverState; error?: string }>(
+      '/api/command',
+      { method: 'POST', body: { command: cmd, await: true } },
+    )
+    manualResponse.value = data.response ? `${data.response};` : '(no reply)'
     state.value = data.state
   } catch (e: any) {
     lastError.value = e.message
@@ -1952,9 +2306,11 @@ function chSqlLabel(ch: ChannelConfig): string | null {
 // ----------- lifecycle -----------
 
 onMounted(async () => {
+  loadTheme()
   const savedBaud = localStorage.getItem('cat_baud')
   if (savedBaud) selectedBaud.value = Number(savedBaud)
   loadChannels()
+  loadQuickMacros()
   await Promise.all([refreshPorts(), loadPresets()])
   // Sync with server state (e.g. after page reload while transceiver is already connected)
   const s = await $fetch<TransceiverState>('/api/status')
@@ -1964,6 +2320,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopEventSource()
+  if (macroToastTimer) { clearTimeout(macroToastTimer); macroToastTimer = null }
+  document.removeEventListener('mousedown', onGlobalMousedownForMacroDropdown)
 })
 </script>
 
@@ -1981,6 +2339,8 @@ onUnmounted(() => {
   --green: #3fb950;
   --red: #f85149;
   --yellow: #d29922;
+  --vfo-card-main: #161b22;
+  --vfo-card-sub:  #161b22;
   --radius: 8px;
   --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
 }
@@ -2170,15 +2530,18 @@ body {
 }
 
 .vfo-card {
-  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 16px 20px;
   position: relative;
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.72), inset 0 1px 0 rgba(147, 180, 138, 0.52), 0 0 15px rgba(0, 50, 50, 0.83);
+
 }
 
-.main-card { border-left: 3px solid #444; }
-.sub-card  { border-left: 3px solid #444; }
+/* Per-card backgrounds so each VFO can be themed independently via the
+   Appearance settings drawer (--vfo-card-main / --vfo-card-sub). */
+.main-card { background: var(--vfo-card-main); border-left: 3px solid #444; }
+.sub-card  { background: var(--vfo-card-sub);  border-left: 3px solid #444; }
 
 /* Active (TX) VFO — full orange border */
 .vfo-card--tx-vfo {
@@ -2848,12 +3211,17 @@ body {
 
 .scope-level-track {
   flex: 1;
+  min-width: 0;
   height: 9px;
   background: #21262d;
   border: 1px solid #30363d;
   border-radius: 3px;
   position: relative;
   cursor: pointer;
+  /* The track itself stays unclipped so the center tick mark may extend
+     above/below it. The fill is constrained by the math in
+     `scopeLevelFillStyle`, which clamps pct to [-50, +50], and by the
+     `max-width: 50%` safety in the `.scope-level-fill` rule below. */
   overflow: visible;
 }
 
@@ -2876,6 +3244,9 @@ body {
   position: absolute;
   top: 0;
   height: 100%;
+  /* Safety upper bound — the bipolar bar can occupy at most one half
+     of the track on either side of the centre line. */
+  max-width: 50%;
   border-radius: 3px;
   transition: left .1s ease-out, width .1s ease-out;
   pointer-events: none;
@@ -3090,5 +3461,318 @@ body {
   border-color: #3b82f6;
   color: #fff;
   font-weight: 700;
+}
+
+/* ── Appearance settings ─────────────────────────────────────────── */
+
+.btn-icon {
+  padding: 6px 10px;
+  line-height: 1;
+  font-size: 16px;
+}
+
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 1000;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.settings-panel {
+  width: min(440px, 100vw);
+  height: 100%;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, .4);
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+
+.settings-header h2 {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--text);
+}
+
+.settings-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.settings-close:hover { color: var(--text); }
+
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.settings-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 18px;
+  line-height: 1.5;
+}
+
+.settings-section { margin-bottom: 22px; }
+
+.settings-section h3 {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: 110px 36px 1fr;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.settings-row--wide {
+  grid-template-columns: 110px 1fr;
+}
+
+.settings-row label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.settings-row input[type=color] {
+  width: 36px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  background: transparent;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.settings-row input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+.settings-row input[type=color]::-webkit-color-swatch { border: none; border-radius: 2px; }
+
+.settings-hex,
+.settings-select {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  border-radius: 3px;
+  width: 100%;
+  outline: none;
+}
+
+.settings-hex:focus,
+.settings-select:focus {
+  border-color: var(--accent);
+}
+
+.settings-row input[type=range] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.settings-val {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.settings-footer {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--surface2);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-foot-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* ── Macro quick-run dropdown ────────────────────────────────────────── */
+
+.macro-quickrun {
+  position: relative;
+}
+
+.macro-quickrun-caret {
+  margin-left: 4px;
+  font-size: 9px;
+  opacity: 0.8;
+}
+
+.macro-quickrun-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 240px;
+  max-width: 320px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.macro-quickrun-head {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--text-muted);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.macro-quickrun-disabled-hint {
+  color: var(--yellow);
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+  font-size: 9px;
+}
+
+.macro-quickrun-menu ul {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.macro-quickrun-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+}
+
+.macro-quickrun-run {
+  flex: 1;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.macro-quickrun-run:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+.macro-quickrun-run small {
+  color: var(--text-muted);
+  font-size: 10px;
+  margin-left: 4px;
+}
+.macro-quickrun-run:disabled { opacity: 0.4; cursor: default; }
+
+.macro-quickrun-edit {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.macro-quickrun-edit:hover { color: var(--accent); background: var(--surface2); }
+
+.macro-quickrun-empty {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 14px 12px;
+  text-align: center;
+}
+
+.macro-quickrun-foot {
+  padding: 6px;
+  border-top: 1px solid var(--border);
+  background: var(--surface2);
+}
+
+.macro-quickrun-new {
+  width: 100%;
+  background: none;
+  border: 1px dashed var(--border);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.macro-quickrun-new:hover { border-color: var(--accent); background: var(--surface); }
+
+/* ── Macro toast ─────────────────────────────────────────────────────── */
+
+.macro-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 2000;
+  min-width: 240px;
+  max-width: 420px;
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  animation: macroToastIn 0.18s ease-out;
+}
+.macro-toast.ok  { border-color: var(--green); color: var(--green); }
+.macro-toast.err { border-color: var(--red);   color: var(--red); }
+
+@keyframes macroToastIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 </style>

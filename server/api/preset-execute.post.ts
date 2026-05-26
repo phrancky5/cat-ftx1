@@ -12,7 +12,6 @@ export interface PresetExecuteResult {
 }
 
 export default defineEventHandler(async (event): Promise<PresetExecuteResult> => {
-  const { serialServerUrl } = useRuntimeConfig()
   const body = await readBody(event)
 
   if (!Array.isArray(body?.commands) || body.commands.length === 0) {
@@ -20,7 +19,7 @@ export default defineEventHandler(async (event): Promise<PresetExecuteResult> =>
   }
 
   try {
-    return await $fetch<PresetExecuteResult>(`${serialServerUrl}/preset`, {
+    return await serialFetch<PresetExecuteResult>(event, '/preset', {
       method: 'POST',
       body: { commands: body.commands },
     })

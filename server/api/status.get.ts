@@ -1,7 +1,6 @@
-export default defineEventHandler(async () => {
-  const { serialServerUrl } = useRuntimeConfig()
+export default defineEventHandler(async (event) => {
   try {
-    return await $fetch(`${serialServerUrl}/status`)
+    return await serialFetch(event, '/status')
   } catch {
     // Serial server not running — return disconnected state
     return {

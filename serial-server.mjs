@@ -11,11 +11,64 @@
 
 import http from 'node:http'
 import { EventEmitter } from 'node:events'
+import { randomBytes } from 'node:crypto'
+import { readFileSync, writeFileSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { SerialPort } from 'serialport'
 import { ReadlineParser } from '@serialport/parser-readline'
 
 const PORT = 3001
 const DEBUG = false
+
+// ──────────────────────────────────────────────────────────
+// Optional in-process radio simulator (dev convenience).
+// Activated by `SIMULATE_RIG=1` in the environment; injects a fake
+// "SIM-FTX1" port into the port list. See sim-serial-port.mjs.
+// ──────────────────────────────────────────────────────────
+
+const SIMULATE_RIG = process.env.SIMULATE_RIG === '1'
+let SimulatedSerialPort = null
+let SIM_PORT_PATH = null
+if (SIMULATE_RIG) {
+  const mod = await import('./sim-serial-port.mjs')
+  SimulatedSerialPort = mod.SimulatedSerialPort
+  SIM_PORT_PATH = mod.SIM_PORT_PATH
+  console.log(`[serial-server] simulator enabled — port "${SIM_PORT_PATH}" available`)
+}
+
+// ──────────────────────────────────────────────────────────
+// Per-launch shared secret for the local HTTP API.
+//
+// Precedence:
+//   1. SERIAL_TOKEN env var (set by electron/main.mjs in packaged builds).
+//   2. A token file under os.tmpdir() shared with the Nuxt server in `npm run dev`.
+//   3. A freshly-generated random token (written to the file so Nuxt can read it).
+//
+// The token is required on every endpoint as `Authorization: Bearer <token>`.
+// EventSource cannot send custom headers, so /events also accepts ?token=<token>.
+// ──────────────────────────────────────────────────────────
+
+const TOKEN_FILE = path.join(os.tmpdir(), 'cat-ftx1-token')
+
+function ensureSerialToken() {
+  const fromEnv = process.env.SERIAL_TOKEN?.trim()
+  if (fromEnv) return fromEnv
+  for (let i = 0; i < 5; i++) {
+    try {
+      const existing = readFileSync(TOKEN_FILE, 'utf-8').trim()
+      if (existing) return existing
+    } catch { /* file missing — fall through to create */ }
+    try {
+      const fresh = randomBytes(32).toString('hex')
+      writeFileSync(TOKEN_FILE, fresh, { flag: 'wx', mode: 0o600 })
+      return fresh
+    } catch { /* race: another process just created the file — retry the read */ }
+  }
+  throw new Error('Unable to establish serial-server token')
+}
+
+const SERIAL_TOKEN = ensureSerialToken()
 
 // ──────────────────────────────────────────────────────────
 // CAT decode maps
@@ -102,7 +155,11 @@ class SerialManager extends EventEmitter {
   }
 
   async listPorts() {
-    return await SerialPort.list()
+    const real = await SerialPort.list()
+    if (SIMULATE_RIG) {
+      return [{ path: SIM_PORT_PATH, manufacturer: 'CAT FTX-1 Simulator' }, ...real]
+    }
+    return real
   }
 
   // ── Connect ────────────────────────────────────────────
@@ -111,10 +168,12 @@ class SerialManager extends EventEmitter {
     if (this.port?.isOpen) throw new Error('Already connected')
 
     return new Promise((resolve, reject) => {
-      const sp = new SerialPort({
-        path: portPath, baudRate: Number(baudRate),
-        dataBits: 8, stopBits: 1, parity: 'none', autoOpen: false,
-      })
+      const sp = (SIMULATE_RIG && portPath === SIM_PORT_PATH)
+        ? new SimulatedSerialPort({ path: portPath, baudRate: Number(baudRate) })
+        : new SerialPort({
+            path: portPath, baudRate: Number(baudRate),
+            dataBits: 8, stopBits: 1, parity: 'none', autoOpen: false,
+          })
 
       sp.open(async (err) => {
         if (err) { reject(new Error(`Cannot open ${portPath}: ${err.message}`)); return }
@@ -630,14 +689,32 @@ function send(res, status, body) {
 // ──────────────────────────────────────────────────────────
 
 const server = http.createServer(async (req, res) => {
-  // CORS for local dev
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Cache-Control')
+  // ── 1. Host header check (DNS-rebinding mitigation) ────
+  // The listener is bound to 127.0.0.1, so the only legitimate Host header is
+  // 127.0.0.1:<PORT>. Reject `localhost:<PORT>` too: anything that bypasses our
+  // explicit IP would also bypass dns-rebinding hardening.
+  const hostHeader = req.headers.host ?? ''
+  if (hostHeader !== `127.0.0.1:${PORT}`) {
+    res.writeHead(403, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: 'forbidden host' }))
+    return
+  }
 
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
 
-  const url = new URL(req.url, `http://localhost:${PORT}`)
+  const url = new URL(req.url, `http://127.0.0.1:${PORT}`)
+
+  // ── 2. Auth: Bearer token required on every endpoint ──
+  // The browser never talks to this server directly — the Nuxt SSE proxy
+  // (`/api/events`) adds the Bearer token server-to-server. There is no
+  // query-string token because no caller needs one.
+  const authHeader = req.headers.authorization ?? ''
+  const headerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : ''
+  if (!headerToken || headerToken !== SERIAL_TOKEN) {
+    res.writeHead(401, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: 'unauthorized' }))
+    return
+  }
 
   try {
     // ── GET /ports ──────────────────────────────────────
@@ -655,7 +732,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── GET /events  (Server-Sent Events) ───────────────
-    // Client subscribes once; state changes are pushed as they happen.
+    // Consumed only by the Nuxt SSE proxy (`/api/events`).
     if (url.pathname === '/events' && req.method === 'GET') {
       res.setHeader('Content-Type', 'text/event-stream')
       res.setHeader('Cache-Control', 'no-cache')
@@ -698,6 +775,20 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req)
       if (!body.command) return send(res, 400, { error: 'command is required' })
       const cmd = body.command.replace(/;+$/, '').trim()
+
+      // Opt-in: wait for the radio's reply and include it in the response.
+      // Used by the manual CAT command input. Setters that the radio does
+      // not reply to (UP / DN / BS / VS / PS, etc.) will time out — that is
+      // intentional and surfaces as response:null to the caller.
+      if (body.await === true) {
+        try {
+          const response = await manager.sendCommand(cmd, 800)
+          return send(res, 200, { ok: true, response, state: manager.getState() })
+        } catch (e) {
+          return send(res, 200, { ok: true, response: null, error: e.message, state: manager.getState() })
+        }
+      }
+
       await manager.sendCommandNoWait(cmd)
       // Some commands do not generate AI unsolicited notifications.
       // For those, follow up with a read query after a short delay so the
@@ -757,6 +848,11 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`[serial-server] Listening on http://127.0.0.1:${PORT}`)
   console.log(`[serial-server] SSE endpoint: http://127.0.0.1:${PORT}/events`)
+  if (!process.env.SERIAL_TOKEN) {
+    console.log(`[serial-server] auth token written to ${TOKEN_FILE}`)
+  } else {
+    console.log('[serial-server] auth token loaded from SERIAL_TOKEN env')
+  }
 })
 
 // Graceful shutdown

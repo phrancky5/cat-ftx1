@@ -30,6 +30,22 @@
         "FB144775000",
         "FR00"
       ]
+    },
+{
+      "id": "custom1",
+      "label": "CUSTOM1",
+      "color": "#f59e0b",
+      "description": "CUSTOM1",
+      "commands": [
+        "VS0",
+        "FR01",
+        "BS113",
+        "MD14",
+        "EX0601010",
+        "FB144775000",
+        "FR00"
+      ]
     }
+
   ]
 }

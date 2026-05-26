@@ -18,6 +18,9 @@ logs
 .DS_Store
 .idea
 
+# User data (SQLite DB created on first run)
+data/
+
 # Local env files
 .env
 .env.*
