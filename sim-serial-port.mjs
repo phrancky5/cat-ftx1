@@ -22,6 +22,7 @@
  */
 
 import { EventEmitter } from 'node:events'
+import { bandDefaultHz, hzToBandCode, stepBandCode } from './band-defaults.mjs'
 
 export const SIM_PORT_PATH = 'SIM-FTX1'
 
@@ -378,8 +379,36 @@ export class SimulatedSerialPort extends EventEmitter {
       return null
     }
 
+    // ── Band select / step (silent on real radio) ─────
+    if (prefix === 'BS' && params.length >= 3) {
+      const vfo = params[0]
+      const bandCode = params.substring(1, 3)
+      const hz = bandDefaultHz(bandCode)
+      if (hz != null) {
+        if (vfo === '1') this.s.fb = hz
+        else this.s.fa = hz
+      }
+      return null
+    }
+    if (prefix === 'BU' && params.length >= 1) {
+      const vfo = params[0]
+      const key = vfo === '1' ? 'fb' : 'fa'
+      const code = hzToBandCode(this.s[key]) ?? '05'
+      const next = bandDefaultHz(stepBandCode(code, +1))
+      if (next != null) this.s[key] = next
+      return null
+    }
+    if (prefix === 'BD' && params.length >= 1) {
+      const vfo = params[0]
+      const key = vfo === '1' ? 'fb' : 'fa'
+      const code = hzToBandCode(this.s[key]) ?? '05'
+      const next = bandDefaultHz(stepBandCode(code, -1))
+      if (next != null) this.s[key] = next
+      return null
+    }
+
     // ── Commands the radio does not acknowledge ────────
-    //   UP / DN / BS / VS / PS — silent (real radio behavior).
+    //   UP / DN / VS / PS — silent (real radio behavior).
     return null
   }
 }

@@ -16,9 +16,8 @@ import http from 'node:http'
  *     the IP allowlist middleware.
  */
 export default defineEventHandler(async (event) => {
-  const cfg = useRuntimeConfig(event)
   const token = getSerialToken(event)
-  const upstreamUrl = new URL(`${cfg.serialServerUrl as string}/events`)
+  const upstreamUrl = new URL(`${getSerialServerUrl(event)}/events`)
 
   setResponseStatus(event, 200)
   setResponseHeader(event, 'Content-Type', 'text/event-stream')

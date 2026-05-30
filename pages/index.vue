@@ -363,7 +363,7 @@
               class="band-sel"
               :disabled="bandBusy || state.txState || state.mox"
               @click="openBandPopup('1')"
-            >{{ subBandCode != null ? BANDS.find(b => b.code === subBandCode)?.label : 'band…' }}</button>
+            >{{ bandSelLabel(subBandCode) }}</button>
             <button
               class="mode-sel"
               :style="modeBadgeStyle(state.subMode)"
@@ -410,7 +410,7 @@
             <StatusBadge label="Tone SQL" :value="state.subSqlType != null ? sqlTypeLabel(state.subSqlType) : '--'" :active="state.subSqlType>0" color-active="#10b981" :clickable="true" :busy="sqlTypeBusy" @toggle="cycleSqlType('1', state.subSqlType)" />
             <StatusBadge label="CTCSS" :value="state.subCtcssTone != null ? (CTCSS_TONES[state.subCtcssTone]?.toFixed(1) + ' Hz') : '--'" :clickable="true" :active="ctcssPopupVfo === '1'" @toggle="openCtcssPopup('1')" />
             <StatusBadge label="DCS" :value="state.subDcsCode != null ? ('D' + String(DCS_CODES[state.subDcsCode]).padStart(3, '0')) : '--'" :clickable="true" :active="dcsPopupVfo === '1'" @toggle="openDcsPopup('1')" />
-            <StatusBadge label="SAVE CH" value="ADD" color-active="#f97316" :clickable="state.subFreq !== null" @toggle="saveChannelFromVfo('1')" />
+            <StatusBadge label="SAVE CH" value="ADD" color-active="#f97316" :clickable="state.subFreq !== null" @toggle="openChannelSaveModal('1')" />
           </section>
         </div>
 
@@ -437,7 +437,7 @@
                 class="band-sel"
                 :disabled="bandBusy || state.txState || state.mox"
                 @click="openBandPopup('0')"
-            >{{ mainBandCode != null ? BANDS.find(b => b.code === mainBandCode)?.label : 'band…' }}</button>
+            >{{ bandSelLabel(mainBandCode) }}</button>
             <button
                 class="mode-sel"
                 :style="modeBadgeStyle(state.mainMode)"
@@ -486,7 +486,7 @@
             <StatusBadge label="Tone SQL" :value="state.mainSqlType != null ? sqlTypeLabel(state.mainSqlType) : '--'" :active="state.mainSqlType>0" color-active="#10b981" :clickable="true" :busy="sqlTypeBusy" @toggle="cycleSqlType('0', state.mainSqlType)" />
             <StatusBadge label="CTCSS" :value="state.mainCtcssTone != null ? (CTCSS_TONES[state.mainCtcssTone]?.toFixed(1) + ' Hz') : '--'" :clickable="true" :active="ctcssPopupVfo === '0'" @toggle="openCtcssPopup('0')" />
             <StatusBadge label="DCS" :value="state.mainDcsCode != null ? ('D' + String(DCS_CODES[state.mainDcsCode]).padStart(3, '0')) : '--'" :clickable="true" :active="dcsPopupVfo === '0'" @toggle="openDcsPopup('0')" />
-            <StatusBadge label="SAVE CH" value="ADD" color-active="#f97316" :clickable="state.mainFreq !== null" @toggle="saveChannelFromVfo('0')" />
+            <StatusBadge label="SAVE CH" value="ADD" color-active="#f97316" :clickable="state.mainFreq !== null" @toggle="openChannelSaveModal('0')" />
           </section>
         </div>
 
@@ -699,11 +699,52 @@
               v-for="ch in sortedChannels"
               :key="ch.id"
               class="ch-badge"
-              :title="chSqlLabel(ch) ?? undefined"
+              :data-ch-id="ch.id"
+              :title="channelTooltip(ch)"
               @click="applyChannel(ch)"
             >
-              <span class="ch-freq">{{ chLabel(ch) }}</span>
-              <span v-if="chSqlLabel(ch)" class="ch-sql">{{ chSqlLabel(ch) }}</span>
+              <div class="ch-main">
+                <input
+                  class="ch-label-input"
+                  :value="channelLabelDisplay(ch)"
+                  type="text"
+                  maxlength="32"
+                  spellcheck="false"
+                  placeholder="Channel label"
+                  aria-label="Channel label"
+                  @click.stop
+                  @mousedown.stop
+                  @focus="seedChannelLabelDraft(ch)"
+                  @input="onChannelLabelInput(ch.id, ($event.target as HTMLInputElement).value)"
+                  @blur="onChannelLabelCommit(ch.id)"
+                  @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+                  @keydown.esc.prevent="onChannelLabelCancel(ch.id); ($event.target as HTMLInputElement).blur()"
+                />
+                <div class="ch-meta">
+                  <span class="ch-vfo" :class="`ch-vfo--${ch.vfo === '1' ? 'sub' : 'main'}`">
+                    {{ ch.vfo === '1' ? 'SUB' : 'MAIN' }}
+                  </span>
+                  <div class="ch-freq-row" @click.stop @mousedown.stop>
+                    <input
+                      class="ch-freq-input"
+                      :value="channelFreqDisplay(ch)"
+                      type="text"
+                      inputmode="decimal"
+                      spellcheck="false"
+                      aria-label="Channel frequency MHz"
+                      title="Frequency in MHz"
+                      @focus="seedChannelFreqDraft(ch)"
+                      @input="onChannelFreqInput(ch.id, ($event.target as HTMLInputElement).value)"
+                      @blur="onChannelFreqCommit(ch.id)"
+                      @keydown.enter.prevent="onChannelFreqCommit(ch.id); ($event.target as HTMLInputElement).blur()"
+                      @keydown.esc.prevent="onChannelFreqCancel(ch.id); ($event.target as HTMLInputElement).blur()"
+                    />
+                    <span class="ch-freq-unit">MHz</span>
+                  </div>
+                  <span v-if="ch.mode" class="ch-mode">{{ ch.mode }}</span>
+                  <span v-if="chSqlLabel(ch)" class="ch-sql">{{ chSqlLabel(ch) }}</span>
+                </div>
+              </div>
               <button class="ch-del" @click.stop="deleteChannel(ch.id)" title="Remove">×</button>
             </div>
           </div>
@@ -867,6 +908,86 @@
       </div>
     </Teleport>
 
+    <!-- ── Save channel modal (teleported to body) ── -->
+    <Teleport to="body">
+      <div
+        v-if="showChannelSaveModal"
+        class="tone-modal-backdrop"
+        @click.self="closeChannelSaveModal"
+      >
+        <div
+          ref="channelSaveDialogRef"
+          class="tone-modal channel-save-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Save channel"
+        >
+          <div class="tone-modal-header">
+            <span class="tone-modal-title">Save Channel</span>
+            <button class="tone-modal-close" @click="closeChannelSaveModal" aria-label="Close">✕</button>
+          </div>
+          <div class="channel-save-form">
+            <div class="channel-save-row channel-save-row--vfo">
+              <span class="channel-save-lbl">VFO</span>
+              <div class="channel-vfo-toggle" role="group" aria-label="VFO to save">
+                <button
+                  type="button"
+                  class="channel-vfo-toggle-btn"
+                  :class="{ 'channel-vfo-toggle-btn--active': channelSaveDraft.vfo === '0' }"
+                  :disabled="state.mainFreq == null"
+                  title="Save from MAIN VFO"
+                  @click="setChannelSaveVfo('0')"
+                >MAIN</button>
+                <button
+                  type="button"
+                  class="channel-vfo-toggle-btn"
+                  :class="{ 'channel-vfo-toggle-btn--active': channelSaveDraft.vfo === '1' }"
+                  :disabled="state.subFreq == null"
+                  title="Save from SUB VFO"
+                  @click="setChannelSaveVfo('1')"
+                >SUB</button>
+              </div>
+            </div>
+            <label class="channel-save-row">
+              <span class="channel-save-lbl">Label</span>
+              <input
+                ref="channelSaveLabelRef"
+                v-model="channelSaveDraft.label"
+                type="text"
+                class="channel-save-input"
+                maxlength="32"
+                spellcheck="false"
+                placeholder="e.g. 40m USB"
+                @keydown.enter.prevent="channelSaveFreqRef?.focus()"
+              />
+            </label>
+            <label class="channel-save-row">
+              <span class="channel-save-lbl">Frequency</span>
+              <div class="channel-save-freq-wrap">
+                <input
+                  ref="channelSaveFreqRef"
+                  v-model="channelSaveDraft.freqMhz"
+                  type="text"
+                  inputmode="decimal"
+                  class="channel-save-input channel-save-input--freq"
+                  spellcheck="false"
+                  placeholder="7.100"
+                  @keydown.enter.prevent="confirmChannelSave()"
+                />
+                <span class="channel-save-unit">MHz</span>
+              </div>
+            </label>
+            <p v-if="channelSaveMeta" class="channel-save-meta">{{ channelSaveMeta }}</p>
+            <p v-if="channelSaveError" class="channel-save-error">{{ channelSaveError }}</p>
+            <div class="channel-save-actions">
+              <button type="button" class="btn btn-ghost btn-sm" @click="closeChannelSaveModal">Cancel</button>
+              <button type="button" class="btn btn-primary btn-sm" @click="confirmChannelSave">Save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <!-- ── Band picker modal (teleported to body) ── -->
     <Teleport to="body">
       <div
@@ -891,8 +1012,12 @@
               :key="b.code"
               class="band-modal-btn"
               :class="{ 'band-modal-btn--active': (bandPopupVfo === '0' ? mainBandCode : subBandCode) === b.code }"
+              :title="b.meter ? `${b.meter} — ${b.label}` : b.label"
               @click="selectBandFromPopup(bandPopupVfo, b.code)"
-            >{{ b.label }}</button>
+            >
+              <span v-if="b.meter" class="band-modal-meter">{{ b.meter }}</span>
+              <span class="band-modal-freq" :class="{ 'band-modal-freq--solo': !b.meter }">{{ b.label }}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -1058,6 +1183,9 @@ const defaultState = (): TransceiverState => ({
 
 interface ChannelConfig {
   id: string
+  label: string
+  /** VFO this channel was saved from / applies to: 0 = MAIN, 1 = SUB. */
+  vfo: '0' | '1'
   freq: number
   mode: string | null
   sqlType: number | null
@@ -1407,7 +1535,10 @@ async function runMacroById(id: number) {
 function loadChannels() {
   try {
     const raw = localStorage.getItem('cat_channels')
-    savedChannels.value = raw ? JSON.parse(raw) : []
+    const parsed = raw ? JSON.parse(raw) : []
+    savedChannels.value = Array.isArray(parsed)
+      ? parsed.map((ch: Partial<ChannelConfig> & { freq: number; id?: string }) => normalizeChannel(ch))
+      : []
   } catch { savedChannels.value = [] }
 }
 function persistChannels() {
@@ -1583,22 +1714,36 @@ const speechProcLabel = computed(() => {
 // ----------- band data -----------
 
 const BANDS = [
-  { code: '00', label: '1.8 MHz',   freqMin:   1_800_000, freqMax:   2_000_000 },
-  { code: '01', label: '3.5 MHz',   freqMin:   3_500_000, freqMax:   4_000_000 },
-  { code: '02', label: '5 MHz',     freqMin:   5_000_000, freqMax:   5_500_000 },
-  { code: '03', label: '7 MHz',     freqMin:   7_000_000, freqMax:   7_300_000 },
-  { code: '04', label: '10 MHz',    freqMin:  10_000_000, freqMax:  10_200_000 },
-  { code: '05', label: '14 MHz',    freqMin:  14_000_000, freqMax:  14_400_000 },
-  { code: '06', label: '18 MHz',    freqMin:  18_000_000, freqMax:  18_200_000 },
-  { code: '07', label: '21 MHz',    freqMin:  21_000_000, freqMax:  21_500_000 },
-  { code: '08', label: '24.5 MHz',  freqMin:  24_500_000, freqMax:  25_000_000 },
-  { code: '09', label: '28 MHz',    freqMin:  28_000_000, freqMax:  30_000_000 },
-  { code: '10', label: '50 MHz',    freqMin:  50_000_000, freqMax:  54_000_000 },
-  { code: '11', label: '70 MHz/GEN',freqMin:  70_000_000, freqMax: 108_000_000 },
+  { code: '00', label: '1.8 MHz',   meter: '160m',  freqMin:   1_800_000, freqMax:   2_000_000 },
+  { code: '01', label: '3.5 MHz',   meter: '80m',   freqMin:   3_500_000, freqMax:   4_000_000 },
+  { code: '02', label: '5 MHz',     meter: '60m',   freqMin:   5_000_000, freqMax:   5_500_000 },
+  { code: '03', label: '7 MHz',     meter: '40m',   freqMin:   7_000_000, freqMax:   7_300_000 },
+  { code: '04', label: '10 MHz',    meter: '30m',   freqMin:  10_000_000, freqMax:  10_200_000 },
+  { code: '05', label: '14 MHz',    meter: '20m',   freqMin:  14_000_000, freqMax:  14_400_000 },
+  { code: '06', label: '18 MHz',    meter: '17m',   freqMin:  18_000_000, freqMax:  18_200_000 },
+  { code: '07', label: '21 MHz',    meter: '15m',   freqMin:  21_000_000, freqMax:  21_500_000 },
+  { code: '08', label: '24.5 MHz',  meter: '12m',   freqMin:  24_500_000, freqMax:  25_000_000 },
+  { code: '09', label: '28 MHz',    meter: '10m',   freqMin:  28_000_000, freqMax:  30_000_000 },
+  { code: '10', label: '50 MHz',    meter: '6m',    freqMin:  50_000_000, freqMax:  54_000_000 },
+  { code: '11', label: '70 MHz/GEN', meter: '4m',   freqMin:  70_000_000, freqMax: 108_000_000 },
   { code: '12', label: 'AIR',       freqMin: 108_000_000, freqMax: 144_000_000 },
-  { code: '13', label: '144 MHz',   freqMin: 144_000_000, freqMax: 148_000_000 },
-  { code: '14', label: '430 MHz',   freqMin: 430_000_000, freqMax: 450_000_000 },
+  { code: '13', label: '144 MHz',   meter: '2m',    freqMin: 144_000_000, freqMax: 148_000_000 },
+  { code: '14', label: '430 MHz',   meter: '70cm',  freqMin: 430_000_000, freqMax: 450_000_000 },
 ] as const
+
+type BandEntry = (typeof BANDS)[number]
+
+function bandByCode(code: string | null | undefined): BandEntry | undefined {
+  if (code == null) return undefined
+  return BANDS.find(b => b.code === code)
+}
+
+/** Compact label on the VFO band button (meter name when known). */
+function bandSelLabel(code: string | null): string {
+  const b = bandByCode(code)
+  if (!b) return 'band…'
+  return b.meter ? b.meter : b.label
+}
 
 function freqToBandCode(hz: number | null): string | null {
   if (!hz) return null
@@ -2690,22 +2835,145 @@ async function selectDcsCode(vfo: '0' | '1', idx: number) {
 
 // ── Saved channels ──────────────────────────────────────
 
-function saveChannelFromVfo(vfo: '0' | '1') {
-  const freq     = vfo === '0' ? state.value.mainFreq    : state.value.subFreq
-  const mode     = vfo === '0' ? state.value.mainMode    : state.value.subMode
-  const sqlType  = vfo === '0' ? state.value.mainSqlType : state.value.subSqlType
-  const ctcssIdx = vfo === '0' ? state.value.mainCtcssTone : state.value.subCtcssTone
-  const dcsIdx   = vfo === '0' ? state.value.mainDcsCode   : state.value.subDcsCode
-  if (freq == null) return
+const MIN_CHANNEL_HZ = 30_000
+const MAX_CHANNEL_HZ = 470_000_000
+
+interface ChannelSaveDraft {
+  label: string
+  freqMhz: string
+  vfo: '0' | '1'
+  mode: string | null
+  sqlType: number | null
+  ctcssIdx: number | null
+  dcsIdx: number | null
+}
+
+const showChannelSaveModal = ref(false)
+const channelSaveDraft = ref<ChannelSaveDraft>({
+  label: '',
+  freqMhz: '',
+  vfo: '0',
+  mode: null,
+  sqlType: null,
+  ctcssIdx: null,
+  dcsIdx: null,
+})
+const channelSaveError = ref('')
+const channelSaveDialogRef = ref<HTMLElement | null>(null)
+const channelSaveLabelRef = ref<HTMLInputElement | null>(null)
+const channelSaveFreqRef = ref<HTMLInputElement | null>(null)
+/** In-progress label/freq while editing a saved channel card. */
+type ChannelFieldDraft = { label?: string, freqMhz?: string }
+const chFieldDraft = ref<Record<string, ChannelFieldDraft>>({})
+/** Keep card order stable while an input inside it has focus (avoids jump on SSE re-render). */
+const channelListOrder = ref<string[] | null>(null)
+
+const channelSaveMeta = computed(() => {
+  const d = channelSaveDraft.value
+  const parts: string[] = []
+  if (d.mode) parts.push(d.mode)
+  const sql = chSqlLabel({ id: '', label: '', vfo: d.vfo, freq: 0, mode: d.mode, sqlType: d.sqlType, ctcssIdx: d.ctcssIdx, dcsIdx: d.dcsIdx })
+  if (sql) parts.push(sql)
+  return parts.length ? parts.join(' · ') : null
+})
+
+function channelFreqMhzString(hz: number): string {
+  return (hz / 1_000_000).toFixed(3)
+}
+
+function parseChannelFreqMhz(raw: string): number | null {
+  const cleaned = String(raw ?? '').trim().replace(/,/g, '.').replace(/[^\d.]/g, '')
+  if (!cleaned) return null
+  const mhz = parseFloat(cleaned)
+  if (!Number.isFinite(mhz) || mhz <= 0) return null
+  const hz = Math.round(mhz * 1_000_000)
+  if (hz < MIN_CHANNEL_HZ || hz > MAX_CHANNEL_HZ) return null
+  return hz
+}
+
+function vfoSnapshot(vfo: '0' | '1') {
+  return {
+    freq:     vfo === '0' ? state.value.mainFreq    : state.value.subFreq,
+    mode:     vfo === '0' ? state.value.mainMode    : state.value.subMode,
+    sqlType:  vfo === '0' ? state.value.mainSqlType : state.value.subSqlType,
+    ctcssIdx: vfo === '0' ? state.value.mainCtcssTone : state.value.subCtcssTone,
+    dcsIdx:   vfo === '0' ? state.value.mainDcsCode   : state.value.subDcsCode,
+  }
+}
+
+function setChannelSaveVfo(vfo: '0' | '1') {
+  const snap = vfoSnapshot(vfo)
+  if (snap.freq == null) return
+  channelSaveDraft.value = {
+    ...channelSaveDraft.value,
+    vfo,
+    freqMhz: channelFreqMhzString(snap.freq),
+    mode: snap.mode ?? null,
+    sqlType: snap.sqlType ?? null,
+    ctcssIdx: snap.ctcssIdx ?? null,
+    dcsIdx: snap.dcsIdx ?? null,
+    label: defaultChannelLabel(snap.freq, snap.mode ?? null),
+  }
+  channelSaveError.value = ''
+}
+
+function openChannelSaveModal(vfo: '0' | '1') {
+  const snap = vfoSnapshot(vfo)
+  if (snap.freq == null) return
+  channelSaveError.value = ''
+  channelSaveDraft.value = {
+    label: defaultChannelLabel(snap.freq, snap.mode ?? null),
+    freqMhz: channelFreqMhzString(snap.freq),
+    vfo,
+    mode: snap.mode ?? null,
+    sqlType: snap.sqlType ?? null,
+    ctcssIdx: snap.ctcssIdx ?? null,
+    dcsIdx: snap.dcsIdx ?? null,
+  }
+  showChannelSaveModal.value = true
+  nextTick(() => {
+    channelSaveLabelRef.value?.focus()
+    channelSaveLabelRef.value?.select()
+  })
+}
+
+function closeChannelSaveModal() {
+  showChannelSaveModal.value = false
+  channelSaveError.value = ''
+}
+
+function confirmChannelSave() {
+  const d = channelSaveDraft.value
+  const hz = parseChannelFreqMhz(d.freqMhz)
+  if (hz == null) {
+    channelSaveError.value = `Enter a valid frequency (${MIN_CHANNEL_HZ / 1000} kHz – ${MAX_CHANNEL_HZ / 1_000_000} MHz).`
+    channelSaveFreqRef.value?.focus()
+    return
+  }
+  const id = Date.now().toString()
   savedChannels.value = [
     ...savedChannels.value,
-    { id: Date.now().toString(), freq, mode: mode ?? null, sqlType: sqlType ?? null, ctcssIdx: ctcssIdx ?? null, dcsIdx: dcsIdx ?? null },
+    normalizeChannel({
+      id,
+      label: d.label,
+      vfo: d.vfo,
+      freq: hz,
+      mode: d.mode,
+      sqlType: d.sqlType,
+      ctcssIdx: d.ctcssIdx,
+      dcsIdx: d.dcsIdx,
+    }),
   ]
   persistChannels()
+  closeChannelSaveModal()
+}
+
+function saveChannelFromVfo(vfo: '0' | '1') {
+  openChannelSaveModal(vfo)
 }
 
 async function applyChannel(ch: ChannelConfig) {
-  const vfo: '0' | '1' = state.value.txVfo === 1 ? '1' : '0'
+  const vfo = ch.vfo === '1' ? '1' : '0'
   const cmds: string[] = []
   cmds.push((vfo === '0' ? 'FA' : 'FB') + String(ch.freq).padStart(9, '0'))
   if (ch.mode) {
@@ -2728,14 +2996,186 @@ function deleteChannel(id: string) {
   persistChannels()
 }
 
-const sortedChannels = computed(() =>
-  [...savedChannels.value].sort((a, b) => a.freq - b.freq)
-)
-
-function chLabel(ch: ChannelConfig): string {
-  const mhz = (ch.freq / 1_000_000).toFixed(3)
-  return `${mhz}${ch.mode ? ' ' + ch.mode : ''}`
+function defaultChannelLabel(freq: number, mode: string | null): string {
+  const band = bandByCode(freqToBandCode(freq))
+  if (band?.meter) return mode ? `${band.meter} ${mode}` : band.meter
+  const mhz = (freq / 1_000_000).toFixed(3)
+  return mode ? `${mhz} ${mode}` : mhz
 }
+
+function normalizeChannel(ch: Partial<ChannelConfig> & { freq: number; id?: string }): ChannelConfig {
+  const mode = ch.mode ?? null
+  const label = typeof ch.label === 'string' && ch.label.trim()
+    ? ch.label.trim()
+    : defaultChannelLabel(ch.freq, mode)
+  return {
+    id: ch.id ?? Date.now().toString(),
+    label,
+    vfo: ch.vfo === '1' ? '1' : '0',
+    freq: ch.freq,
+    mode,
+    sqlType: ch.sqlType ?? null,
+    ctcssIdx: ch.ctcssIdx ?? null,
+    dcsIdx: ch.dcsIdx ?? null,
+  }
+}
+
+function updateChannelLabel(id: string, raw: string) {
+  const trimmed = raw.trim()
+  savedChannels.value = savedChannels.value.map((c) =>
+    c.id === id ? { ...c, label: trimmed || defaultChannelLabel(c.freq, c.mode) } : c,
+  )
+  persistChannels()
+}
+
+function updateChannelFreq(id: string, hz: number) {
+  savedChannels.value = savedChannels.value.map((c) =>
+    c.id === id ? { ...c, freq: hz } : c,
+  )
+  persistChannels()
+}
+
+function freezeChannelListOrder() {
+  if (channelListOrder.value == null) {
+    channelListOrder.value = [...savedChannels.value]
+      .sort((a, b) => a.freq - b.freq)
+      .map(c => c.id)
+  }
+}
+
+function maybeUnfreezeChannelListOrder(id: string) {
+  nextTick(() => {
+    const card = document.querySelector(`[data-ch-id="${id}"]`)
+    const active = document.activeElement
+    if (card?.contains(active)) return
+    channelListOrder.value = null
+  })
+}
+
+function channelDraftOf(id: string): ChannelFieldDraft {
+  return chFieldDraft.value[id] ?? {}
+}
+
+function hasChannelDraftField(id: string, field: keyof ChannelFieldDraft): boolean {
+  return Object.prototype.hasOwnProperty.call(chFieldDraft.value[id] ?? {}, field)
+}
+
+function setChannelDraftField(id: string, field: keyof ChannelFieldDraft, value: string) {
+  freezeChannelListOrder()
+  chFieldDraft.value = {
+    ...chFieldDraft.value,
+    [id]: { ...chFieldDraft.value[id], [field]: value },
+  }
+}
+
+function clearChannelDraftField(id: string, field: keyof ChannelFieldDraft) {
+  const cur = { ...(chFieldDraft.value[id] ?? {}) }
+  delete cur[field]
+  if (Object.keys(cur).length === 0) {
+    const next = { ...chFieldDraft.value }
+    delete next[id]
+    chFieldDraft.value = next
+  } else {
+    chFieldDraft.value = { ...chFieldDraft.value, [id]: cur }
+  }
+}
+
+function seedChannelLabelDraft(ch: ChannelConfig) {
+  freezeChannelListOrder()
+  if (!hasChannelDraftField(ch.id, 'label')) {
+    setChannelDraftField(ch.id, 'label', ch.label)
+  }
+}
+
+function seedChannelFreqDraft(ch: ChannelConfig) {
+  freezeChannelListOrder()
+  if (!hasChannelDraftField(ch.id, 'freqMhz')) {
+    setChannelDraftField(ch.id, 'freqMhz', channelFreqMhzString(ch.freq))
+  }
+}
+
+function channelLabelDisplay(ch: ChannelConfig): string {
+  if (hasChannelDraftField(ch.id, 'label')) {
+    return channelDraftOf(ch.id).label ?? ''
+  }
+  return ch.label
+}
+
+function onChannelLabelInput(id: string, raw: string) {
+  setChannelDraftField(id, 'label', raw)
+}
+
+function onChannelLabelCancel(id: string) {
+  clearChannelDraftField(id, 'label')
+  maybeUnfreezeChannelListOrder(id)
+}
+
+function onChannelLabelCommit(id: string) {
+  if (!hasChannelDraftField(id, 'label')) {
+    maybeUnfreezeChannelListOrder(id)
+    return
+  }
+  const draft = channelDraftOf(id).label ?? ''
+  clearChannelDraftField(id, 'label')
+  updateChannelLabel(id, draft)
+  maybeUnfreezeChannelListOrder(id)
+}
+
+function channelFreqDisplay(ch: ChannelConfig): string {
+  if (hasChannelDraftField(ch.id, 'freqMhz')) {
+    return channelDraftOf(ch.id).freqMhz ?? ''
+  }
+  return channelFreqMhzString(ch.freq)
+}
+
+function onChannelFreqInput(id: string, raw: string) {
+  setChannelDraftField(id, 'freqMhz', raw)
+}
+
+function onChannelFreqCancel(id: string) {
+  clearChannelDraftField(id, 'freqMhz')
+  maybeUnfreezeChannelListOrder(id)
+}
+
+function onChannelFreqCommit(id: string) {
+  if (!hasChannelDraftField(id, 'freqMhz')) {
+    maybeUnfreezeChannelListOrder(id)
+    return
+  }
+  const draft = channelDraftOf(id).freqMhz ?? ''
+  clearChannelDraftField(id, 'freqMhz')
+  const hz = parseChannelFreqMhz(draft)
+  if (hz == null) {
+    lastError.value = 'Invalid channel frequency — not saved.'
+    setTimeout(() => { lastError.value = null }, 4000)
+    maybeUnfreezeChannelListOrder(id)
+    return
+  }
+  updateChannelFreq(id, hz)
+  maybeUnfreezeChannelListOrder(id)
+}
+
+function formatChannelFreq(ch: ChannelConfig): string {
+  return `${channelFreqMhzString(ch.freq)} MHz`
+}
+
+function channelTooltip(ch: ChannelConfig): string {
+  const parts = [ch.label, ch.vfo === '1' ? 'SUB' : 'MAIN', formatChannelFreq(ch)]
+  if (ch.mode) parts.push(ch.mode)
+  const sql = chSqlLabel(ch)
+  if (sql) parts.push(sql)
+  return parts.join(' · ')
+}
+
+const sortedChannels = computed(() => {
+  const byId = new Map(savedChannels.value.map(c => [c.id, c]))
+  if (channelListOrder.value) {
+    return channelListOrder.value
+      .map(id => byId.get(id))
+      .filter((c): c is ChannelConfig => c != null)
+  }
+  return [...savedChannels.value].sort((a, b) => a.freq - b.freq)
+})
 
 function chSqlLabel(ch: ChannelConfig): string | null {
   if (!ch.sqlType) return null
@@ -3217,16 +3657,44 @@ body {
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
-  padding: 9px 4px;
+  padding: 8px 4px;
   background: var(--surface-2, #1e2330);
   border: 2px solid var(--border);
   border-radius: 4px;
   color: var(--text);
   cursor: pointer;
   text-align: center;
-  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  line-height: 1.15;
+  min-height: 44px;
   transition: background .1s, border-color .1s;
   outline: none;
+}
+
+.band-modal-meter {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.band-modal-freq {
+  font-size: 9px;
+  font-weight: 500;
+  opacity: 0.82;
+}
+
+.band-modal-btn--active .band-modal-freq {
+  opacity: 0.92;
+}
+
+.band-modal-freq--solo {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 1;
 }
 
 .band-modal-btn:hover {
@@ -3492,17 +3960,83 @@ body {
 
 .ch-badge {
   display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 7px;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: 6px;
   cursor: pointer;
   transition: border-color .15s, background .15s;
-  font-size: 10px;
   font-family: var(--font-mono);
-  white-space: nowrap;
+  max-width: 100%;
+  min-width: 148px;
+}
+
+.ch-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ch-label-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 2px 4px;
+  outline: none;
+}
+
+.ch-label-input:hover,
+.ch-label-input:focus {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.ch-freq-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.ch-freq-input {
+  width: 5.5em;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 1px 4px;
+  outline: none;
+}
+
+.ch-freq-input:hover,
+.ch-freq-input:focus {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.ch-freq-unit {
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+.ch-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  font-size: 10px;
 }
 
 .ch-badge:hover {
@@ -3511,8 +4045,13 @@ body {
 }
 
 .ch-freq {
-  color: var(--text);
+  color: var(--accent);
   font-weight: 600;
+}
+
+.ch-mode {
+  font-size: 10px;
+  color: var(--text-muted);
 }
 
 .ch-sql {
@@ -3531,11 +4070,161 @@ body {
   padding: 0 2px;
   border-radius: 3px;
   flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 2px;
 }
 
 .ch-del:hover {
   color: #ef4444;
   background: rgba(239, 68, 68, .12);
+}
+
+/* ── Save channel modal ── */
+.channel-save-modal {
+  width: min(320px, calc(100vw - 32px));
+}
+
+.channel-save-row--vfo {
+  align-items: center;
+}
+
+.channel-vfo-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--surface2);
+}
+
+.channel-vfo-toggle-btn {
+  flex: 1;
+  min-width: 72px;
+  padding: 6px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+
+.channel-vfo-toggle-btn + .channel-vfo-toggle-btn {
+  border-left: 1px solid var(--border);
+}
+
+.channel-vfo-toggle-btn:hover:not(:disabled):not(.channel-vfo-toggle-btn--active) {
+  background: rgba(59, 130, 246, .12);
+  color: var(--text);
+}
+
+.channel-vfo-toggle-btn--active {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.channel-vfo-toggle-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.ch-vfo {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.ch-vfo--main {
+  color: #93c5fd;
+  border-color: rgba(59, 130, 246, .45);
+  background: rgba(59, 130, 246, .12);
+}
+
+.ch-vfo--sub {
+  color: #fdba74;
+  border-color: rgba(249, 115, 22, .45);
+  background: rgba(249, 115, 22, .12);
+}
+
+.channel-save-form {
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.channel-save-row {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.channel-save-lbl {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.channel-save-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface2);
+  color: var(--text);
+  outline: none;
+}
+
+.channel-save-input:focus {
+  border-color: var(--accent);
+}
+
+.channel-save-freq-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.channel-save-input--freq {
+  flex: 1;
+  min-width: 0;
+}
+
+.channel-save-unit {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.channel-save-meta {
+  margin: 0;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.channel-save-error {
+  margin: 0;
+  font-size: 11px;
+  color: var(--red, #ef4444);
+}
+
+.channel-save-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
 }
 
 .presets-section {

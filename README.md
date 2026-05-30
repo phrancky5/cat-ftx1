@@ -34,7 +34,7 @@ When using the SPA-1 (Optima) amplifier, the CAT-3 port is used for communicatio
 
 ### Working with FTX-1 Memory ###
 Currently, the program does not access the internal channels memory of the FTX-1 in any way.
-The function for saving and recalling stored frequencies is handled by the program. When the “SAVE CH: Add” button is pressed, the current frequency, modulation type and tone squelch parameters are saved in local storage.
+The function for saving and recalling stored frequencies is handled by the program. When the “SAVE CH: Add” button is pressed, a **Save Channel** dialog opens where you can edit the label, frequency, and **MAIN/SUB** VFO before saving to browser local storage. Saved channels appear in the **Saved Channels** panel; click a channel to recall it on its stored VFO.
 
 ### General notes ###
 The program is still in the early phase and may contain errors; it uses actual transceiver responses, which sometimes differ from those in the Yaesu CAT manual.
@@ -55,7 +55,7 @@ This repository is a maintained fork of the original [cat-ftx1](https://github.c
 | **Fork repository** | https://github.com/phrancky5/cat-ftx1 |
 | **Build label** | `V2.2-NX` (shown in the application header) |
 | **Detailed change log** | [`changelog.md`](changelog.md) — dated entries for every batch |
-| **Implementation notes** | [`cat-ftx1-NXC.md`](cat-ftx1-NXC.md) — long-form design narrative (§§ 1–23) |
+| **Implementation notes** | [`cat-ftx1-NXC.md`](cat-ftx1-NXC.md) — long-form design narrative (§§ 1–25) |
 | **Hamlib / rigctld decision** | [`Hamlib-Research.md`](Hamlib-Research.md) — why we expose `rigctld` without bundling Hamlib |
 | **Screenshots** | [`docs/`](docs/) — UI captures and reference images (listed below) |
 
@@ -67,7 +67,7 @@ Images below use paths relative to this repository so they display on GitHub and
 
 | | |
 |---|---|
-| Original author UI (reference) | NX fork main page (`V2.2-NX`) |
+| Original author UI (reference) | NX fork main page (`V2.2-NX`) — saved channels, band meter labels, settings |
 | ![Original console](docs/ui-screenshot.png) | ![Main page](docs/main_page.png) |
 
 #### Appearance and presets
@@ -104,7 +104,19 @@ Images below use paths relative to this repository so they display on GitHub and
 - **Theme persistence in SQLite** — appearance overrides survive browser cache clears (`settings.theme_overrides` in the database, with `localStorage` as a fast shadow).
 - **Settings API fix** — call sign and theme saves no longer fail with HTTP 500 (SQLite `datetime('now')` quoting corrected).
 - **Header version label** — fork build shown as `V2.2-NX` next to “CAT CONTROLLER” (single source: `runtimeConfig.public.appVersion` in `nuxt.config.ts`).
+- **Settings hex colour entry** — type `#RRGGBB` directly in the appearance drawer (draft-on-focus; no revert while typing).
 - **Status badge robustness** — boolean props coerced correctly when the radio reports `0`/`1` numeric flags.
+
+### Saved channels (browser localStorage)
+
+- **Save Channel modal** — **SAVE CH → ADD** on MAIN or SUB opens a dialog with editable **label**, **frequency (MHz)**, and **MAIN/SUB** toggle (starts on the VFO you saved from).
+- **Channel cards** — label and MHz editable inline; **MAIN/SUB** badge; mode and tone summary; click card to recall on the **stored VFO** (not TX VFO).
+- **Persistence** — `localStorage` key `cat_channels`; legacy entries without `vfo` default to MAIN.
+
+### Band selector
+
+- **Meter band names** in the band picker (e.g. **40m** / 7 MHz, **2m** / 144 MHz) and compact meter label on the VFO band button.
+- **Frequency follows band change** — after **BS**, serial-server re-reads **FA**/**FB** so the MHz display updates (simulator included via `band-defaults.mjs`).
 
 ### Presets (JSON workflow)
 
@@ -168,7 +180,7 @@ Environment variables (serial-server):
 **NX fork:** **Max Elevation** — based on the original work by **SP9AX**.  
 GitHub: https://github.com/phrancky5/cat-ftx1
 
-For the complete per-feature history, start with [`changelog.md`](changelog.md) (newest entries first) or [`cat-ftx1-NXC.md`](cat-ftx1-NXC.md) §§ 9–24 for the follow-on batches after the initial security hardening.
+For the complete per-feature history, start with [`changelog.md`](changelog.md) (newest entries first) or [`cat-ftx1-NXC.md`](cat-ftx1-NXC.md) §§ 9–25 for the follow-on batches after the initial security hardening.
 
 ### Keeping another PC in sync
 
@@ -194,3 +206,19 @@ copy-project.bat D:\Target\cat-ftx1
 ```
 
 That copies all source files and folder structure, excluding `node_modules`, build output, `.git`, and local `data\`. Run `npm install` on the destination PC.
+
+### Port errors on startup (Windows)
+
+If you see **`EACCES: permission denied 127.0.0.1:3001`** or Nuxt picks a port other than 3000:
+
+1. **Check Windows excluded ports** (Hyper-V / Docker often block 3000–3001):
+   ```powershell
+   netsh interface ipv4 show excludedportrange protocol=tcp
+   ```
+2. **Recent builds auto-probe** — `serial-server.mjs` tries 3001, then 3002… up to 3026 and writes the chosen port for Nuxt to find.
+3. **Or set ports explicitly** — copy `.env.example` to `.env`:
+   ```powershell
+   SERIAL_SERVER_PORT=3101
+   PORT=3080
+   ```
+4. **Open the URL Nuxt prints** — if it says `Using alternative port 3080`, browse `http://localhost:3080` (not 3000).

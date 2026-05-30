@@ -11,9 +11,8 @@ export function serialFetch<T = unknown>(
   apiPath: string,
   options: FetchOptions = {},
 ): Promise<T> {
-  const cfg = useRuntimeConfig(event)
   const token = getSerialToken(event)
-  return $fetch<T>(`${cfg.serialServerUrl}${apiPath}`, {
+  return $fetch<T>(`${getSerialServerUrl(event)}${apiPath}`, {
     ...options,
     headers: {
       ...(options.headers ?? {}),

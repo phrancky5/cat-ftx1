@@ -1,8 +1,8 @@
 # CAT FTX-1 — NXC Session Change Log
 
 - Project: `cat-ftx1` v1.0.1 (operator-visible build label: `V2.2-NX`)
-- Date: 2026-05-28 / 2026-05-29
-- Status: Phase 0 (security hardening) verified by operator. Follow-on batches through § 14 (LAN allowlist, simulator response, bandscope fix, theming, macros DB backend, macro builder UI) implemented and verified. 2026-05-27 session added §§ 15–18: cross-workstation source sync, **PresetBuilder rewrite + JSON-driven preset workflow**, **appearance-settings persistence in the database** (`settings.theme_overrides` column), and a **`V2.0-NX` fork identifier** rendered in the header (single-source via `runtimeConfig.public.appVersion`). 2026-05-28 session added § 19: **Smart Preset Builder + CAT command catalogue parsed from `docs/CAT-FTX1.pdf`** — 90-command authoritative catalogue, smart parameter validator (Save blocked on hard errors, warns on conditional / out-of-range), and a `?` help modal carrying the manual's page-4 usage primer plus a sortable / filterable quick-reference table. Same session added § 20: **Category-browsing Command Picker** — replaces the browser-native `<datalist>` with a custom viewport-anchored panel that browses all 90 catalogued commands by category, with auto-flip placement, keyboard navigation (`↑↓` / `Enter` / `Esc`), click-outside dismissal, and live tracking on scroll. § 21: **Binary toggle-switch presets** — eligible 0/1 CAT commands (LK, MX, ST, VX, BI, TS) can be marked `toggle: true` and render as stateful on/off buttons with a live green/red LED, mirroring the radio state via SSE (front-panel changes update the UI). § 22: **Rocket-launch toggle-switch visual style** — opt-in cosmetic variant that draws toggle presets as a physical bat-handle switch on a dark machined panel, controlled per preset via a new `toggleSwitch` flag in `cat-presets.json`. § 23: **`rigctld`-compatible TCP relay + live terminal panel** — `serial-server.mjs` now exposes a small subset of Hamlib's `rigctld` text protocol on port 4532 so external apps (WSJT-X, Fldigi, JS8Call, Gpredict, N1MM, CQRLOG, …) can drive the FTX-1 through our existing serial bridge. Includes per-connection gating via the existing § 9 IP allowlist, Hamlib-style virtual split (no hardware `ST1` ever sent), and a UI terminal panel that pops up next to the Band Scope on first client connect, showing colour-coded RX/TX lines with auto-scroll + resize handle. Companion document: `Hamlib-Research.md` (analysis that led to choosing this architecture over a full Hamlib integration). 2026-05-30 session added § 24: **Optional preset step timing + legacy macro UI hidden** — macro-style `delayMs` / `await` ported into JSON presets behind a Settings toggle (default off for FTX-1); macro builder UI hidden in favour of presets. All sessions verified by the operator on the primary workstation.
+- Date: 2026-05-28 / 2026-05-30
+- Status: Phase 0 (security hardening) verified by operator. Follow-on batches through § 14 (LAN allowlist, simulator response, bandscope fix, theming, macros DB backend, macro builder UI) implemented and verified. 2026-05-27 session added §§ 15–18: cross-workstation source sync, **PresetBuilder rewrite + JSON-driven preset workflow**, **appearance-settings persistence in the database** (`settings.theme_overrides` column), and a **`V2.0-NX` fork identifier** rendered in the header (single-source via `runtimeConfig.public.appVersion`). 2026-05-28 session added § 19: **Smart Preset Builder + CAT command catalogue parsed from `docs/CAT-FTX1.pdf`** — 90-command authoritative catalogue, smart parameter validator (Save blocked on hard errors, warns on conditional / out-of-range), and a `?` help modal carrying the manual's page-4 usage primer plus a sortable / filterable quick-reference table. Same session added § 20: **Category-browsing Command Picker** — replaces the browser-native `<datalist>` with a custom viewport-anchored panel that browses all 90 catalogued commands by category, with auto-flip placement, keyboard navigation (`↑↓` / `Enter` / `Esc`), click-outside dismissal, and live tracking on scroll. § 21: **Binary toggle-switch presets** — eligible 0/1 CAT commands (LK, MX, ST, VX, BI, TS) can be marked `toggle: true` and render as stateful on/off buttons with a live green/red LED, mirroring the radio state via SSE (front-panel changes update the UI). § 22: **Rocket-launch toggle-switch visual style** — opt-in cosmetic variant that draws toggle presets as a physical bat-handle switch on a dark machined panel, controlled per preset via a new `toggleSwitch` flag in `cat-presets.json`. § 23: **`rigctld`-compatible TCP relay + live terminal panel** — `serial-server.mjs` now exposes a small subset of Hamlib's `rigctld` text protocol on port 4532 so external apps (WSJT-X, Fldigi, JS8Call, Gpredict, N1MM, CQRLOG, …) can drive the FTX-1 through our existing serial bridge. Includes per-connection gating via the existing § 9 IP allowlist, Hamlib-style virtual split (no hardware `ST1` ever sent), and a UI terminal panel that pops up next to the Band Scope on first client connect, showing colour-coded RX/TX lines with auto-scroll + resize handle. Companion document: `Hamlib-Research.md` (analysis that led to choosing this architecture over a full Hamlib integration). 2026-05-30 session added § 24: **Optional preset step timing + legacy macro UI hidden** — macro-style `delayMs` / `await` ported into JSON presets behind a Settings toggle (default off for FTX-1); macro builder UI hidden in favour of presets. Same session added § 25: **Saved channels, band UX, port fallback, settings polish** — localStorage saved channels with save modal (label, MHz, MAIN/SUB VFO), inline edit with SSE-safe drafts, band picker meter names, BS→FA/FB refresh, serial-server port probing on Windows, settings hex draft fix, `copy-project.bat`, refreshed `docs/main_page.png`. All sessions verified by the operator on the primary workstation.
 - Companion document: `SECURITY-AUDIT.md` (full vulnerability report). Day-to-day modification log: `changelog.md` (root of the project).
 - Scope of this document: every code change made in the cumulative NXC session, in chronological order. Sections 1–8 describe the initial Phase 0 (security hardening) batch; sections 9+ describe each follow-on batch. Where an earlier design was later superseded, the original section carries a note pointing to the replacement.
 
@@ -3223,4 +3223,72 @@ Migration: `sql/migrate-add-preset-timing-settings.sql`.
 ### 24.6 Deliberately retained
 
 - Macro SQLite tables and `/api/macros*` endpoints — dormant but not deleted; set `SHOW_MACRO_UI = true` in `pages/index.vue` to restore the UI for development.
+
+## 25. Saved channels, band UX, port fallback, settings polish (2026-05-30)
+
+### 25.1 Saved channels (`localStorage` / `cat_channels`)
+
+SP9AX’s original README described saving frequency/mode/SQL to local storage on **SAVE CH: Add**. The NX fork replaces the one-click save with a **Save Channel** modal and richer cards.
+
+| Field | Storage | Notes |
+|---|---|---|
+| `label` | string | User-editable; default from band meter + mode (e.g. `40m USB`) |
+| `vfo` | `'0'` \| `'1'` | MAIN or SUB — set in save modal; recall uses **FA** vs **FB** |
+| `freq` | Hz | Editable in modal and on card (MHz text) |
+| `mode`, `sqlType`, `ctcssIdx`, `dcsIdx` | snapshot | From VFO at save time; applied on recall |
+
+**Save modal:** opened from **SAVE CH → ADD** on MAIN or SUB; **MAIN/SUB** segmented toggle initialised from the originating VFO card; switching VFO reloads live frequency/mode/SQL from that side.
+
+**Inline edit:** label and MHz use draft-on-focus (same pattern as § 25.4 settings hex fix) so SSE re-renders in simulator mode do not revert keystrokes. Card list order frozen while an input inside a card has focus.
+
+**Legacy:** channels saved before `vfo` was added load as MAIN (`'0'`).
+
+### 25.2 Band selector meter names + frequency refresh
+
+- **`BANDS`** table in `pages/index.vue` extended with `meter` (160m … 70cm). Band modal shows meter + MHz; VFO band button shows meter when known.
+- **`band-defaults.mjs`** — calling frequencies per BS band code; **`hzToBandCode`**, **`stepBandCode`** for simulator.
+- **`serial-server.mjs`** — `scheduleFreqRefreshAfterBandChange()` after **BS** / **BU** / **BD**: delayed **FA** or **FB** read so UI MHz tracks band changes (radio is silent on BS).
+- **`sim-serial-port.mjs`** — implements **BS** / **BU** / **BD** using `band-defaults.mjs`.
+
+### 25.3 Serial-server port fallback (Windows)
+
+Some Windows hosts reserve TCP **3001** (and sometimes **3000**) via Hyper-V/Docker → `EACCES` on bind.
+
+- **`serial-server.mjs`** probes **3001…3026**, writes `%TEMP%/cat-ftx1-serial-port`.
+- **`server/utils/serialServerUrl.ts`** — Nuxt server-side URL resolution: env override → port file → default.
+- **`.env.example`** — `SERIAL_SERVER_PORT`, `PORT`, etc.
+- **`README.md`** — operator troubleshooting (*Port errors on startup*).
+
+### 25.4 Settings hex colour draft
+
+Controlled `:value` on appearance hex text fields reverted on each SSE re-render while typing. Fixed with `hexDraft` + commit on blur/Enter (see also channel drafts in § 25.1).
+
+### 25.5 Offline sync
+
+- **`copy-project.bat`** — robocopy project tree to a CLI path (documented in README).
+
+### 25.6 Screenshot
+
+- **`docs/main_page.png`** updated by operator to reflect saved channels panel, band labels, and current NX main UI (referenced from README screenshots table).
+
+### 25.7 Verification checklist
+
+1. **SAVE CH** from SUB → modal opens with **SUB** selected; save; card shows SUB badge; recall sets **FB** not **FA**.
+2. Edit MHz on card — typing is stable in simulator; blur saves; invalid MHz shows error banner.
+3. Band picker — **2m** / 144 MHz; select band — MHz updates within ~300 ms.
+4. Windows (or forced busy port) — serial-server logs alternate port; Nuxt connects via port file.
+5. Settings — type new hex colour; Enter — persists and does not snap back while typing.
+6. README / GitHub — `main_page.png` renders in NX fork screenshots table.
+
+### 25.8 Files touched
+
+- `pages/index.vue` — channels UI/logic, band meters, settings hex draft
+- `band-defaults.mjs` (new)
+- `serial-server.mjs`, `sim-serial-port.mjs`
+- `server/utils/serialServerUrl.ts` (new)
+- `server/utils/serialFetch.ts`, `server/api/events.get.ts`
+- `nuxt.config.ts`, `.env.example` (new)
+- `copy-project.bat`
+- `docs/main_page.png`
+- `README.md`, `changelog.md`, `cat-ftx1-NXC.md`
 

@@ -26,7 +26,8 @@ export default defineNuxtConfig({
   ssr: false,
   devServer: { host: RESOLVED_DEV_HOST },
   runtimeConfig: {
-    serialServerUrl: 'http://127.0.0.1:3001',
+    serialServerUrl: process.env.NUXT_SERIAL_SERVER_URL
+      || `http://127.0.0.1:${process.env.SERIAL_SERVER_PORT || '3001'}`,
     // Per-launch shared secret, populated from NUXT_SERIAL_TOKEN env or, in
     // dev mode, lazy-read from the token file written by serial-server.mjs.
     serialToken: '',

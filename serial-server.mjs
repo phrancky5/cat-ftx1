@@ -20,8 +20,12 @@ import { ReadlineParser } from '@serialport/parser-readline'
 import { RigctldRelay } from './rigctld-relay.mjs'
 import { isAllowedRemoteAddress, getAllowedIpsSpec } from './ip-allowlist.mjs'
 import { normalizePresetSteps } from './preset-steps.mjs'
+import { bandDefaultHz, hzToBandCode, stepBandCode } from './band-defaults.mjs'
 
-const PORT = 3001
+const REQUESTED_PORT = Number(process.env.SERIAL_SERVER_PORT) || 3001
+/** Bound port (may differ when REQUESTED_PORT is blocked — see bindSerialServer). */
+let PORT = REQUESTED_PORT
+const PORT_FILE = path.join(os.tmpdir(), 'cat-ftx1-serial-port')
 const DEBUG = false
 
 // ──────────────────────────────────────────────────────────
@@ -625,6 +629,32 @@ class SerialManager extends EventEmitter {
 
 const manager = new SerialManager()
 
+/**
+ * BS / BU / BD do not reply and may not push FA/FB via AI — re-read the
+ * affected VFO frequency so SSE clients update the displayed MHz.
+ */
+function scheduleFreqRefreshAfterBandChange(cmd) {
+  const prefix = cmd.substring(0, 2).toUpperCase()
+  const queries = []
+  if (prefix === 'BS' && cmd.length >= 4) {
+    queries.push(cmd[2] === '1' ? 'FB' : 'FA')
+  } else if ((prefix === 'BU' || prefix === 'BD') && cmd.length >= 3) {
+    queries.push(cmd[2] === '1' ? 'FB' : 'FA')
+  }
+  if (queries.length === 0) return
+
+  setTimeout(async () => {
+    for (const q of queries) {
+      try {
+        await manager.sendCommand(q, 2000)
+      } catch (e) {
+        console.warn(`[serial-server] band-change freq refresh ${q} failed: ${e.message}`)
+      }
+      await new Promise(r => setTimeout(r, 60))
+    }
+  }, 300)
+}
+
 /** Active SSE response streams — state changes are pushed to all of them. */
 const sseClients = new Set()
 
@@ -801,6 +831,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       await manager.sendCommandNoWait(cmd)
+      scheduleFreqRefreshAfterBandChange(cmd)
       // Some commands do not generate AI unsolicited notifications.
       // For those, follow up with a read query after a short delay so the
       // response is parsed as an unsolicited frame, state is updated, and
@@ -883,15 +914,65 @@ const server = http.createServer(async (req, res) => {
   }
 })
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`[serial-server] Listening on http://127.0.0.1:${PORT}`)
-  console.log(`[serial-server] SSE endpoint: http://127.0.0.1:${PORT}/events`)
-  if (!process.env.SERIAL_TOKEN) {
-    console.log(`[serial-server] auth token written to ${TOKEN_FILE}`)
-  } else {
-    console.log('[serial-server] auth token loaded from SERIAL_TOKEN env')
+async function bindSerialServer() {
+  const maxPort = REQUESTED_PORT + 25
+  for (let candidate = REQUESTED_PORT; candidate <= maxPort; candidate++) {
+    try {
+      await new Promise((resolve, reject) => {
+        const onError = (err) => {
+          cleanup()
+          reject(err)
+        }
+        const onListening = () => {
+          cleanup()
+          resolve()
+        }
+        const cleanup = () => {
+          server.removeListener('error', onError)
+          server.removeListener('listening', onListening)
+        }
+        server.once('error', onError)
+        server.once('listening', onListening)
+        server.listen(candidate, '127.0.0.1')
+      })
+      PORT = candidate
+      if (candidate !== REQUESTED_PORT) {
+        console.warn(
+          `[serial-server] port ${REQUESTED_PORT} unavailable — using ${candidate} instead`,
+        )
+        console.warn(
+          `[serial-server] set SERIAL_SERVER_PORT=${candidate} to skip port probing on startup`,
+        )
+      }
+      try {
+        writeFileSync(PORT_FILE, String(PORT), { mode: 0o600 })
+      } catch (err) {
+        console.warn(`[serial-server] could not write ${PORT_FILE}: ${err.message}`)
+      }
+      console.log(`[serial-server] Listening on http://127.0.0.1:${PORT}`)
+      console.log(`[serial-server] SSE endpoint: http://127.0.0.1:${PORT}/events`)
+      if (!process.env.SERIAL_TOKEN) {
+        console.log(`[serial-server] auth token written to ${TOKEN_FILE}`)
+      } else {
+        console.log('[serial-server] auth token loaded from SERIAL_TOKEN env')
+      }
+      return
+    } catch (err) {
+      if (err?.code === 'EACCES' || err?.code === 'EADDRINUSE') {
+        console.warn(`[serial-server] port ${candidate} unavailable (${err.code})`)
+        continue
+      }
+      throw err
+    }
   }
-})
+  console.error(
+    `[serial-server] no free port in range ${REQUESTED_PORT}–${maxPort}.`
+    + ' Windows often reserves 3000–3001 via Hyper-V/Docker — try SERIAL_SERVER_PORT=3101',
+  )
+  process.exit(1)
+}
+
+await bindSerialServer()
 
 // ──────────────────────────────────────────────────────────
 // rigctld-compatible TCP relay

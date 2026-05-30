@@ -5,6 +5,69 @@ Format: each entry is dated `YYYY-MM-DD HH:MM` (local Europe/Warsaw, UTC+2).
 
 ---
 
+## 2026-05-30 22:38 — Saved channels, band UX, startup port fallback, settings fix
+
+Follow-on UX and reliability batch after preset timing and offline sync tooling. Main-page screenshot updated (`docs/main_page.png`).
+
+### Added
+
+- **Saved channels (localStorage)** — **Save Channel** modal with editable **label**, **frequency (MHz)**, and **MAIN/SUB VFO** toggle (initialized from the VFO card used to save). Cards show label, VFO badge, editable MHz, mode, and tone info; click row to recall on the **saved VFO**.
+- **Band picker meter names** — band modal and VFO band button show amateur designations (e.g. **40m** · 7 MHz, **2m** · 144 MHz).
+- **`band-defaults.mjs`** — default/calling frequencies per band code; simulator honours **BS** / **BU** / **BD**.
+- **Serial-server port auto-probe** — if TCP **3001** is blocked (common on Windows with Hyper-V/Docker), tries **3002…3026** and writes the chosen port for Nuxt (`server/utils/serialServerUrl.ts` reads port file or env).
+- **`.env.example`** — documents `SERIAL_SERVER_PORT`, `PORT`, `ALLOWED_IPS`, `SIMULATE_RIG`.
+
+### Changed
+
+- **`serial-server.mjs`** — after **BS** / **BU** / **BD**, re-reads **FA** or **FB** so the MHz display updates when changing band (real radio + simulator).
+- **`sim-serial-port.mjs`** — implements silent band-select commands using `band-defaults.mjs`.
+- **`pages/index.vue`** — settings **hex colour** inputs use draft-on-focus (fixes revert-while-typing); channel label/freq inputs use the same pattern with stable card order during SSE re-renders.
+- **`nuxt.config.ts`** — `serialServerUrl` from `NUXT_SERIAL_SERVER_URL` / `SERIAL_SERVER_PORT`.
+- **`docs/main_page.png`** — refreshed to show saved channels, settings, and current NX main UI.
+
+### Operator-facing impact
+
+- **SAVE CH → ADD** opens the modal; edit label/freq/VFO before **Save**. Existing channels without `vfo` load as **MAIN**.
+- **Band select** should QSY the displayed frequency within ~300 ms.
+- **Windows port errors:** see README → *Port errors on startup*; optional `.env` override.
+- **Theme colours:** type `#RRGGBB` in Settings, press Enter or tab away.
+
+### Files touched
+
+- `band-defaults.mjs` (new)
+- `.env.example` (new)
+- `server/utils/serialServerUrl.ts` (new)
+- `serial-server.mjs`
+- `sim-serial-port.mjs`
+- `server/api/events.get.ts`
+- `server/utils/serialFetch.ts`
+- `nuxt.config.ts`
+- `pages/index.vue`
+- `docs/main_page.png`
+- `README.md`
+- `cat-ftx1-NXC.md`
+- `changelog.md`
+
+---
+
+## 2026-05-30 18:00 — Offline sync script; settings hex colour fix
+
+### Added
+
+- **`copy-project.bat`** — robocopy-based project sync to a CLI destination (excludes `node_modules`, build output, `.git`, local `data\`).
+
+### Changed
+
+- **`pages/index.vue`** — appearance settings **hex text fields** use a draft buffer on focus/input; commit on blur/Enter (fixes old colour overwriting keystrokes).
+
+### Files touched
+
+- `copy-project.bat`
+- `pages/index.vue`
+- `README.md`
+
+---
+
 ## 2026-05-30 12:52 — Optional preset step timing; legacy macro UI hidden
 
 Prepares the JSON preset workflow for future multi-rig support (slow serial rigs such as Kenwood TS-850S @ 4800 bps, or low-power hosts such as Raspberry Pi) without slowing down the default FTX-1 path.
