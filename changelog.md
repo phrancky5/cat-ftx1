@@ -5,6 +5,30 @@ Format: each entry is dated `YYYY-MM-DD HH:MM` (local Europe/Warsaw, UTC+2).
 
 ---
 
+## 2026-05-31 23:55 — Saved channels in `cat-channels.json` (presets model)
+
+### Changed
+
+- **Saved channels persistence** — moved from browser `localStorage` (`cat_channels`) to **`cat-channels.json`** in the project root, same pattern as **`cat-presets.json`** (`GET/PUT /api/json-channels`).
+- **`pages/index.vue`** — load/save channels via API; debounced PUT on add/edit/delete; **one-time migration** imports legacy `localStorage` when the JSON file is empty, then removes the old key.
+
+### Operator notes
+
+- Channels **survive browser cache clears** and sync with the project folder (git pull, `copy-project.bat`).
+- File is human-editable JSON; backup by copying `cat-channels.json`.
+
+### Files touched
+
+- `cat-channels.json` (new)
+- `server/api/json-channels.get.ts` (new)
+- `server/api/json-channels.put.ts` (new)
+- `pages/index.vue`
+- `package.json`, `electron-builder.yml`
+- `README.md`, `docs/INSTALLATION.md`
+- `changelog.md`
+
+---
+
 ## 2026-05-31 11:15 — Yaesu VFO font, font selector, installation guide
 
 ### Added

@@ -6,6 +6,7 @@ files:
   - .output/**
   - serial-server.mjs
   - cat-presets.json
+  - cat-channels.json
 mac:
   target: dmg
 win:

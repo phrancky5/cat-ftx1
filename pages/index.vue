@@ -1555,17 +1555,55 @@ async function runMacroById(id: number) {
   }
 }
 
-function loadChannels() {
+function loadChannelsFromLocalStorage(): ChannelConfig[] {
   try {
     const raw = localStorage.getItem('cat_channels')
     const parsed = raw ? JSON.parse(raw) : []
-    savedChannels.value = Array.isArray(parsed)
-      ? parsed.map((ch: Partial<ChannelConfig> & { freq: number; id?: string }) => normalizeChannel(ch))
-      : []
-  } catch { savedChannels.value = [] }
+    if (!Array.isArray(parsed)) return []
+    return parsed.map((ch: Partial<ChannelConfig> & { freq: number; id?: string }) => normalizeChannel(ch))
+  } catch {
+    return []
+  }
 }
-function persistChannels() {
-  localStorage.setItem('cat_channels', JSON.stringify(savedChannels.value))
+
+let channelPutTimer: ReturnType<typeof setTimeout> | null = null
+
+async function persistChannelsNow(): Promise<void> {
+  await $fetch('/api/json-channels', {
+    method: 'PUT',
+    body: { channels: savedChannels.value },
+  })
+}
+
+function persistChannels(): void {
+  if (channelPutTimer) clearTimeout(channelPutTimer)
+  channelPutTimer = setTimeout(() => {
+    channelPutTimer = null
+    persistChannelsNow().catch((err: any) => {
+      console.warn('[persistChannels] PUT failed:', err?.data?.statusMessage ?? err?.message ?? err)
+      lastError.value = 'Failed to save channels to cat-channels.json'
+    })
+  }, 400)
+}
+
+async function loadChannels(): Promise<void> {
+  try {
+    const data = await $fetch<{ channels: ChannelConfig[] }>('/api/json-channels')
+    savedChannels.value = Array.isArray(data.channels)
+      ? data.channels.map((ch) => normalizeChannel(ch))
+      : []
+
+    // One-time migration from browser localStorage (legacy).
+    const legacy = loadChannelsFromLocalStorage()
+    if (legacy.length > 0 && savedChannels.value.length === 0) {
+      savedChannels.value = legacy
+      await persistChannelsNow()
+    }
+    try { localStorage.removeItem('cat_channels') } catch { /* ignore */ }
+  } catch (err: any) {
+    console.warn('[loadChannels] failed:', err?.data?.statusMessage ?? err?.message ?? err)
+    savedChannels.value = loadChannelsFromLocalStorage()
+  }
 }
 const moxBusy = ref(false)
 const txVfoBusy = ref(false)
@@ -3298,7 +3336,7 @@ onMounted(async () => {
   await loadUserSettings()
   const savedBaud = localStorage.getItem('cat_baud')
   if (savedBaud) selectedBaud.value = Number(savedBaud)
-  loadChannels()
+  await loadChannels()
   loadQuickMacros()
   // Restore the user's previously-dragged rigctld panel height (if any).
   // While this stays null the panel auto-tracks the Band Scope's height.

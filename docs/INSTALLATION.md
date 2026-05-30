@@ -155,7 +155,7 @@ No manual DB setup is required for a **new** installation.
 
 - On first start, Nuxt creates **`data/cat-ftx1.db`** automatically from **`sql/schema.sql`**.
 - Settings (call sign, theme, preset timing flags) are stored there.
-- Saved **channels** use browser **localStorage** (`cat_channels`), not the radio’s internal memory.
+- Saved **channels** are stored in **`cat-channels.json`** (not the radio’s internal memory). Browser cache clears do not remove them.
 
 ### Upgrading an existing database
 
@@ -184,6 +184,7 @@ Duplicate-column errors mean the migration was already applied — safe to ignor
 | Path | Purpose |
 |---|---|
 | `cat-presets.json` | Preset definitions (editable via Preset Manager) |
+| `cat-channels.json` | Saved channel list (editable in UI or by hand) |
 | `docs/CAT-FTX1.pdf` | Yaesu CAT manual (Preset Builder catalogue source) |
 
 ### VFO frequency font (not in repository)

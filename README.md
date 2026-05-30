@@ -112,7 +112,7 @@ Images below use paths relative to this repository so they display on GitHub and
 
 - **Save Channel modal** — **SAVE CH → ADD** on MAIN or SUB opens a dialog with editable **label**, **frequency (MHz)**, and **MAIN/SUB** toggle (starts on the VFO you saved from).
 - **Channel cards** — label and MHz editable inline; **MAIN/SUB** badge; mode and tone summary; click card to recall on the **stored VFO** (not TX VFO).
-- **Persistence** — `localStorage` key `cat_channels`; legacy entries without `vfo` default to MAIN.
+- **Persistence** — `cat-channels.json` in the project root (same model as presets); survives browser cache clears. One-time import from legacy `localStorage` on first load if the file is empty.
 
 ### Band selector
 
