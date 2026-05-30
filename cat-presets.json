@@ -32,18 +32,6 @@
       ]
     },
     {
-      "id": "test",
-      "label": "Goto 11 meter CQ Freq USB",
-      "commands": [
-        "VS0",
-        "FB278050000",
-        "MD02",
-        "RM"
-      ],
-      "description": "change freq",
-      "color": "#160bf4"
-    },
-    {
       "id": "lkonof",
       "label": "LKONOF",
       "commands": [
