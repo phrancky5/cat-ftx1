@@ -186,3 +186,11 @@ sqlite3 data/cat-ftx1.db ".read sql/migrate-add-preset-timing-settings.sql"
 ```
 
 Then restart `serial-server.mjs` and `npm run dev`. Commit and push from the machine where you made changes; pull on the others — standard Git workflow, no special sync tool required.
+
+**Without Git** (USB stick, LAN share, etc.), run from the project folder:
+
+```powershell
+copy-project.bat D:\Target\cat-ftx1
+```
+
+That copies all source files and folder structure, excluding `node_modules`, build output, `.git`, and local `data\`. Run `npm install` on the destination PC.
