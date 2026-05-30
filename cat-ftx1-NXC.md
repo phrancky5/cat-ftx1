@@ -2,7 +2,7 @@
 
 - Project: `cat-ftx1` v1.0.1 (operator-visible build label: `V2.2-NX`)
 - Date: 2026-05-28 / 2026-05-29
-- Status: Phase 0 (security hardening) verified by operator. Follow-on batches through § 14 (LAN allowlist, simulator response, bandscope fix, theming, macros DB backend, macro builder UI) implemented and verified. 2026-05-27 session added §§ 15–18: cross-workstation source sync, **PresetBuilder rewrite + JSON-driven preset workflow**, **appearance-settings persistence in the database** (`settings.theme_overrides` column), and a **`V2.0-NX` fork identifier** rendered in the header (single-source via `runtimeConfig.public.appVersion`). 2026-05-28 session added § 19: **Smart Preset Builder + CAT command catalogue parsed from `docs/CAT-FTX1.pdf`** — 90-command authoritative catalogue, smart parameter validator (Save blocked on hard errors, warns on conditional / out-of-range), and a `?` help modal carrying the manual's page-4 usage primer plus a sortable / filterable quick-reference table. Same session added § 20: **Category-browsing Command Picker** — replaces the browser-native `<datalist>` with a custom viewport-anchored panel that browses all 90 catalogued commands by category, with auto-flip placement, keyboard navigation (`↑↓` / `Enter` / `Esc`), click-outside dismissal, and live tracking on scroll. § 21: **Binary toggle-switch presets** — eligible 0/1 CAT commands (LK, MX, ST, VX, BI, TS) can be marked `toggle: true` and render as stateful on/off buttons with a live green/red LED, mirroring the radio state via SSE (front-panel changes update the UI). § 22: **Rocket-launch toggle-switch visual style** — opt-in cosmetic variant that draws toggle presets as a physical bat-handle switch on a dark machined panel, controlled per preset via a new `toggleSwitch` flag in `cat-presets.json`. § 23: **`rigctld`-compatible TCP relay + live terminal panel** — `serial-server.mjs` now exposes a small subset of Hamlib's `rigctld` text protocol on port 4532 so external apps (WSJT-X, Fldigi, JS8Call, Gpredict, N1MM, CQRLOG, …) can drive the FTX-1 through our existing serial bridge. Includes per-connection gating via the existing § 9 IP allowlist, Hamlib-style virtual split (no hardware `ST1` ever sent), and a UI terminal panel that pops up next to the Band Scope on first client connect, showing colour-coded RX/TX lines with auto-scroll + resize handle. Companion document: `Hamlib-Research.md` (analysis that led to choosing this architecture over a full Hamlib integration). All sessions verified by the operator on the primary workstation.
+- Status: Phase 0 (security hardening) verified by operator. Follow-on batches through § 14 (LAN allowlist, simulator response, bandscope fix, theming, macros DB backend, macro builder UI) implemented and verified. 2026-05-27 session added §§ 15–18: cross-workstation source sync, **PresetBuilder rewrite + JSON-driven preset workflow**, **appearance-settings persistence in the database** (`settings.theme_overrides` column), and a **`V2.0-NX` fork identifier** rendered in the header (single-source via `runtimeConfig.public.appVersion`). 2026-05-28 session added § 19: **Smart Preset Builder + CAT command catalogue parsed from `docs/CAT-FTX1.pdf`** — 90-command authoritative catalogue, smart parameter validator (Save blocked on hard errors, warns on conditional / out-of-range), and a `?` help modal carrying the manual's page-4 usage primer plus a sortable / filterable quick-reference table. Same session added § 20: **Category-browsing Command Picker** — replaces the browser-native `<datalist>` with a custom viewport-anchored panel that browses all 90 catalogued commands by category, with auto-flip placement, keyboard navigation (`↑↓` / `Enter` / `Esc`), click-outside dismissal, and live tracking on scroll. § 21: **Binary toggle-switch presets** — eligible 0/1 CAT commands (LK, MX, ST, VX, BI, TS) can be marked `toggle: true` and render as stateful on/off buttons with a live green/red LED, mirroring the radio state via SSE (front-panel changes update the UI). § 22: **Rocket-launch toggle-switch visual style** — opt-in cosmetic variant that draws toggle presets as a physical bat-handle switch on a dark machined panel, controlled per preset via a new `toggleSwitch` flag in `cat-presets.json`. § 23: **`rigctld`-compatible TCP relay + live terminal panel** — `serial-server.mjs` now exposes a small subset of Hamlib's `rigctld` text protocol on port 4532 so external apps (WSJT-X, Fldigi, JS8Call, Gpredict, N1MM, CQRLOG, …) can drive the FTX-1 through our existing serial bridge. Includes per-connection gating via the existing § 9 IP allowlist, Hamlib-style virtual split (no hardware `ST1` ever sent), and a UI terminal panel that pops up next to the Band Scope on first client connect, showing colour-coded RX/TX lines with auto-scroll + resize handle. Companion document: `Hamlib-Research.md` (analysis that led to choosing this architecture over a full Hamlib integration). 2026-05-30 session added § 24: **Optional preset step timing + legacy macro UI hidden** — macro-style `delayMs` / `await` ported into JSON presets behind a Settings toggle (default off for FTX-1); macro builder UI hidden in favour of presets. All sessions verified by the operator on the primary workstation.
 - Companion document: `SECURITY-AUDIT.md` (full vulnerability report). Day-to-day modification log: `changelog.md` (root of the project).
 - Scope of this document: every code change made in the cumulative NXC session, in chronological order. Sections 1–8 describe the initial Phase 0 (security hardening) batch; sections 9+ describe each follow-on batch. Where an earlier design was later superseded, the original section carries a note pointing to the replacement.
 
@@ -3163,4 +3163,64 @@ The result is one new TCP port, ~700 lines of new code, two new
 files at the repo root, no native dependencies, no schema changes,
 no installer changes — and the entire Hamlib client ecosystem
 suddenly works against our radio.
+
+## 24. Optional preset step timing; legacy macro UI hidden (2026-05-30)
+
+### 24.1 Motivation
+
+The original macro system stored per-step `delay_ms` and optional await in SQLite (`cat_macro_steps`). For this fork, **JSON presets** (`cat-presets.json`) are the primary operator workflow. Future multi-rig support (e.g. Kenwood TS-850S @ 4800 bps, Raspberry Pi hosts) needs the same pacing controls without re-exposing the full macro UI. The FTX-1 on a modern PC should stay on the fast path by default.
+
+### 24.2 Design
+
+| Control | Default | Effect |
+|---|---|---|
+| `settings.preset_timing_enabled` | `0` (off) | When off, preset execution is unchanged: 60 ms between steps; AI fire-and-forget when AI streaming is active. Per-step `delayMs` / `await` in JSON are ignored. |
+| `settings.preset_default_delay_ms` | `100` | Used when timing is on and a step leaves Delay empty. |
+| Per-step `delayMs` | optional | Pause after that command (ms). |
+| Per-step `await: true` | optional | Wait for radio reply (`sendCommand`, 2000 ms timeout) before the next step. |
+
+Preset command entries in JSON:
+
+```json
+"commands": [
+  "FA014074000",
+  { "command": "MD2", "delayMs": 200, "await": true }
+]
+```
+
+### 24.3 Implementation
+
+- **`preset-steps.mjs`** — Node helper used by `serial-server.mjs`.
+- **`components/preset-command-utils.ts`** — browser-safe duplicate (`parsePresetCommandEntry`, `normalizePresetSteps`, `presetCommandCount`).
+- **`server/utils/presetSteps.ts`** — TypeScript types for API layer.
+- **`serial-server.mjs`** — `/preset` accepts `{ steps, timingEnabled, defaultDelayMs }`; branches between legacy loop and timed loop.
+- **`server/api/preset-execute.post.ts`** — loads timing flags from `settings`, normalizes commands, POSTs to serial-server.
+- **`server/api/settings.get.ts` / `settings.put.ts`** — read/write `preset_timing_enabled`, `preset_default_delay_ms` (graceful fallback if columns missing).
+- **`components/PresetBuilder.vue`** — Delay/Await columns when `presetTimingEnabled` prop is true; `serializeCommands()` writes objects when timing fields differ from defaults.
+- **`components/PresetButton.vue`** — progress overlay uses `presetCommandCount()`.
+- **`pages/index.vue`** — Settings → Preset execution section; `SHOW_MACRO_UI = false` hides macro quick-run, ☰, modal, toast.
+
+### 24.4 Schema
+
+New columns on `settings`:
+
+```sql
+preset_timing_enabled INTEGER NOT NULL DEFAULT 0 CHECK (preset_timing_enabled IN (0, 1)),
+preset_default_delay_ms INTEGER NOT NULL DEFAULT 100 CHECK (preset_default_delay_ms BETWEEN 0 AND 60000)
+```
+
+Migration: `sql/migrate-add-preset-timing-settings.sql`.
+
+### 24.5 Operator verification checklist
+
+1. **Timing off (default):** run a multi-step preset — behaviour matches pre-§ 24 (no extra delay beyond existing 60 ms).
+2. **Settings → Preset execution:** enable timing, set default delay 100 ms — Preset Builder shows Delay/Await columns.
+3. **Save preset** with one step `await: true` and a 200 ms delay — inspect `cat-presets.json` for object form.
+4. **Run preset** with timing on — observe slower pacing / awaited steps on a slow path or simulator.
+5. **Macro UI:** confirm quick-run dropdown, ☰, and macro modal are not visible; presets still work.
+6. **Migration on second PC:** after `git pull`, run migration SQL once if `data/cat-ftx1.db` already exists.
+
+### 24.6 Deliberately retained
+
+- Macro SQLite tables and `/api/macros*` endpoints — dormant but not deleted; set `SHOW_MACRO_UI = true` in `pages/index.vue` to restore the UI for development.
 

@@ -6,13 +6,18 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+/** Legacy string or timed step object (used when preset timing is enabled in settings). */
+export type PresetCommandEntry =
+  | string
+  | { command: string, delayMs?: number, await?: boolean }
+
 export interface Preset {
   id: string
   label: string
   color?: string
   icon?: string
   description?: string
-  commands: string[]
+  commands: PresetCommandEntry[]
   /**
    * When true, the on-screen button renders as a toggle switch: the
    * single command must be a binary 0/1 CAT command; the button reads

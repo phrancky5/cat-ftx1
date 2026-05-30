@@ -36,8 +36,8 @@
         {{ state.connected ? `● Connected — ${state.port}` : '○ Disconnected' }}
       </div>
 
-      <!-- Quick-run macro dropdown -->
-      <div class="macro-quickrun" ref="macroQuickRunEl">
+      <!-- Legacy macro UI (hidden — superseded by Preset Builder + optional step timing) -->
+      <div v-if="SHOW_MACRO_UI" class="macro-quickrun" ref="macroQuickRunEl">
         <button
           class="btn btn-ghost btn-sm"
           :disabled="macroRunBusy"
@@ -75,6 +75,7 @@
       </div>
 
       <button
+        v-if="SHOW_MACRO_UI"
         class="btn btn-ghost btn-icon"
         @click="showMacroBuilder = true"
         title="Open Macro Builder"
@@ -89,8 +90,8 @@
       >⚙</button>
     </header>
 
-    <!-- ── Macro Builder modal ── -->
-    <div v-if="showMacroBuilder" class="modal-overlay" @click.self="closeMacroBuilder">
+    <!-- ── Macro Builder modal (legacy, hidden) ── -->
+    <div v-if="SHOW_MACRO_UI && showMacroBuilder" class="modal-overlay" @click.self="closeMacroBuilder">
       <div class="modal-container modal-half">
         <button class="modal-close" @click="closeMacroBuilder" aria-label="Close">✕</button>
         <MacroBuilder
@@ -106,22 +107,24 @@
       <div class="modal-container modal-wide">
         <PresetBuilder
           :open-preset-id="builderTargetPresetId"
+          :preset-timing-enabled="userSettings.preset_timing_enabled"
+          :preset-default-delay-ms="userSettings.preset_default_delay_ms"
           @close="closePresetBuilder"
           @saved="onPresetSaved"
         />
       </div>
     </div>
 
-    <!-- ── Macro toast ── -->
-    <div v-if="macroToast" class="macro-toast" :class="macroToast.kind">
+    <!-- ── Macro toast (legacy, hidden) ── -->
+    <div v-if="SHOW_MACRO_UI && macroToast" class="macro-toast" :class="macroToast.kind">
       {{ macroToast.text }}
     </div>
 
     <!-- ── Appearance settings drawer ── -->
     <div v-if="showSettings" class="settings-overlay" @click.self="showSettings = false">
-      <aside class="settings-panel" role="dialog" aria-label="Appearance settings">
+      <aside class="settings-panel" role="dialog" aria-label="Settings">
         <header class="settings-header">
-          <h2>Appearance</h2>
+          <h2>Settings</h2>
           <button class="settings-close" @click="showSettings = false" aria-label="Close">✕</button>
         </header>
 
@@ -148,7 +151,40 @@
           </section>
 
           <section class="settings-section">
-            <h3>Colors</h3>
+            <h3>Preset execution</h3>
+            <label class="settings-row settings-row--check">
+              <input
+                v-model="userSettings.preset_timing_enabled"
+                type="checkbox"
+                @change="saveUserSettings"
+              />
+              <span class="settings-check-text">
+                Off by default (FTX-1 is fast). Enable for legacy/slow rigs
+                (e.g. Kenwood TS-850S @ 4800&nbsp;bps) or Raspberry&nbsp;Pi-class hosts.
+              </span>
+            </label>
+            <div
+              class="settings-row settings-row--wide settings-row--delay"
+              :class="{ 'settings-row--disabled': !userSettings.preset_timing_enabled }"
+            >
+              <label for="settings-preset-delay">Default delay (ms)</label>
+              <input
+                id="settings-preset-delay"
+                v-model.number="userSettings.preset_default_delay_ms"
+                type="number"
+                min="0"
+                max="60000"
+                step="10"
+                class="settings-hex settings-delay-input"
+                :disabled="!userSettings.preset_timing_enabled"
+                @change="saveUserSettings"
+              />
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <h3>Appearance</h3>
+            <h4 class="settings-subhead">Colors</h4>
             <div v-for="key in COLOR_VARS" :key="key" class="settings-row">
               <label :for="`theme-${key}`">{{ key }}</label>
               <input
@@ -169,7 +205,7 @@
           </section>
 
           <section class="settings-section">
-            <h3>Layout</h3>
+            <h4 class="settings-subhead">Layout</h4>
             <div class="settings-row">
               <label for="theme-radius">--radius</label>
               <input
@@ -868,6 +904,7 @@ import StatusBadge from '~/components/StatusBadge.vue'
 import PresetButton from '~/components/PresetButton.vue'
 import MacroBuilder from '~/components/MacroBuilder.vue'
 import PresetBuilder from '~/components/PresetBuilder.vue'
+import type { PresetCommandEntry } from '~/components/preset-command-utils'
 
 // Single source of truth for the version label shown in the header.
 // Bumped in nuxt.config.ts under runtimeConfig.public.appVersion (or via
@@ -1030,7 +1067,7 @@ interface Preset {
   color?: string
   icon?: string
   description?: string
-  commands: string[]
+  commands: PresetCommandEntry[]
   /**
    * If true, the on-screen PresetButton renders as a toggle switch
    * (green/red LED + read-then-inverse-send behaviour). The single
@@ -1072,6 +1109,9 @@ const rxModeBusy = ref(false)
 const splitBusy = ref(false)
 const savedChannels = ref<ChannelConfig[]>([])
 
+/** Legacy macro UI — superseded by JSON presets + optional step timing. */
+const SHOW_MACRO_UI = false
+
 // ── User settings (DB-backed) ──────────────────────────────────────────
 const userSettings = ref({
   call_sign: '',
@@ -1080,6 +1120,8 @@ const userSettings = ref({
   color_bg: '#0d1117',
   font_mono: 'Courier New',
   radius_px: 8,
+  preset_timing_enabled: false,
+  preset_default_delay_ms: 100,
 })
 const showPresetBuilder = ref(false)
 const builderTargetPresetId = ref<string | null>(null)
@@ -2680,6 +2722,8 @@ async function loadUserSettings() {
       font_mono?: string
       radius_px?: number
       theme_overrides?: Record<string, string> | null
+      preset_timing_enabled?: boolean
+      preset_default_delay_ms?: number
     }>('/api/settings')
 
     userSettings.value = {
@@ -2689,6 +2733,8 @@ async function loadUserSettings() {
       color_bg:      data.color_bg      || '#0d1117',
       font_mono:     data.font_mono     || 'Courier New',
       radius_px:     data.radius_px     || 8,
+      preset_timing_enabled: !!data.preset_timing_enabled,
+      preset_default_delay_ms: Number(data.preset_default_delay_ms) || 100,
     }
 
     // Hydrate CSS-variable overrides from the DB, then apply. The DB copy
@@ -4244,6 +4290,29 @@ body {
   line-height: 1.5;
 }
 
+.settings-hint--tight {
+  margin: -4px 0 10px;
+}
+
+.settings-subhead {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin: 14px 0 8px;
+}
+
+.settings-row--disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.settings-row--delay .settings-delay-input {
+  max-width: 120px;
+  min-width: 72px;
+}
+
 .settings-section { margin-bottom: 22px; }
 
 .settings-section h3 {
@@ -4265,6 +4334,30 @@ body {
 
 .settings-row--wide {
   grid-template-columns: 110px 1fr;
+}
+
+/* Checkbox row: flex full width (must follow .settings-row — grid was squeezing text into 36px) */
+.settings-row.settings-row--check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  white-space: normal;
+}
+
+.settings-row.settings-row--check input[type=checkbox] {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.settings-row.settings-row--check .settings-check-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: normal;
 }
 
 .settings-row label {

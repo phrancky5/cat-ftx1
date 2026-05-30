@@ -13,7 +13,9 @@
  *     color_bg?:        string  (hex #RRGGBB),
  *     font_mono?:       string,
  *     radius_px?:       number  (0..32),
- *     theme_overrides?: Record<string, string> | null
+ *     theme_overrides?: Record<string, string> | null,
+ *     preset_timing_enabled?: boolean,
+ *     preset_default_delay_ms?: number
  *   }
  */
 
@@ -40,6 +42,8 @@ export default defineEventHandler(async (event) => {
       font_mono,
       radius_px,
       theme_overrides,
+      preset_timing_enabled,
+      preset_default_delay_ms,
     } = body
 
     const isValidColor = (hex: unknown) => typeof hex === 'string' && /^#[0-9A-F]{6}$/i.test(hex)
@@ -55,6 +59,11 @@ export default defineEventHandler(async (event) => {
     if (radius_px !== undefined && radius_px !== null
         && (typeof radius_px !== 'number' || radius_px < 0 || radius_px > 32)) {
       throw createError({ statusCode: 400, statusMessage: 'radius_px must be 0–32' })
+    }
+    if (preset_default_delay_ms !== undefined && preset_default_delay_ms !== null
+        && (typeof preset_default_delay_ms !== 'number'
+            || preset_default_delay_ms < 0 || preset_default_delay_ms > 60000)) {
+      throw createError({ statusCode: 400, statusMessage: 'preset_default_delay_ms must be 0–60000' })
     }
 
     // Validate + serialize theme_overrides (accept null = clear, object = set)
@@ -100,6 +109,14 @@ export default defineEventHandler(async (event) => {
     if (font_mono !== undefined)     { setClauses.push('font_mono = ?');     values.push(font_mono) }
     if (radius_px !== undefined)     { setClauses.push('radius_px = ?');     values.push(radius_px) }
     if (themeJson !== undefined)     { setClauses.push('theme_overrides = ?'); values.push(themeJson) }
+    if (preset_timing_enabled !== undefined) {
+      setClauses.push('preset_timing_enabled = ?')
+      values.push(preset_timing_enabled ? 1 : 0)
+    }
+    if (preset_default_delay_ms !== undefined) {
+      setClauses.push('preset_default_delay_ms = ?')
+      values.push(Math.round(Number(preset_default_delay_ms)))
+    }
 
     if (setClauses.length > 0) {
       // NOTE: single-quoted 'now' is the SQL string literal. Double-quoting
@@ -112,7 +129,8 @@ export default defineEventHandler(async (event) => {
 
     const updated = db.prepare(`
       SELECT call_sign, color_primary, color_accent, color_bg,
-             font_mono, radius_px, theme_overrides
+             font_mono, radius_px, theme_overrides,
+             preset_timing_enabled, preset_default_delay_ms
       FROM   settings
       WHERE  rig_id = 'ftx1'
     `).get() as any
@@ -121,6 +139,8 @@ export default defineEventHandler(async (event) => {
       ok: true,
       ...updated,
       theme_overrides: parseThemeOverrides(updated?.theme_overrides),
+      preset_timing_enabled: !!updated?.preset_timing_enabled,
+      preset_default_delay_ms: Number(updated?.preset_default_delay_ms) || 100,
     }
   } catch (err: any) {
     if (err?.statusCode) throw err

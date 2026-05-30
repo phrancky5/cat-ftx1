@@ -8,7 +8,7 @@ The technology used allows the application to run on various operating systems i
 
 The app works by establishing a connection and identifying the transceiver. Once the FTX-1 is detected, auto-information mode is activated, which sends all parameter changes to the app; these changes are then displayed graphically in the web browser.
 
-![FTX-1 Console Screenshot](https://github.com/rzochowski/cat-ftx1/blob/main/docs/ui-screenshot.png)
+![FTX-1 Console Screenshot](docs/ui-screenshot.png)
 
 ### Establishing a Connection ###
 The program works correctly on all three CAT interfaces provided by the transceiver.
@@ -42,3 +42,147 @@ In some cases, the transceiver\'s responses are incorrect (e.g., setting the squ
 The direction of the program\'s future development will depend on users feedback.
 
 **Author:** SP9AX
+
+---
+
+## NX fork enhancements (`V2.2-NX`)
+
+This repository is a maintained fork of the original [cat-ftx1](https://github.com/rzochowski/cat-ftx1) project by **SP9AX**. The base application behaviour described above is unchanged; the sections below summarise **additions and improvements** introduced in the **NX** line by **Max Elevation**.
+
+| | |
+|---|---|
+| **Fork maintainer** | **Max Elevation** |
+| **Fork repository** | https://github.com/phrancky5/cat-ftx1 |
+| **Build label** | `V2.2-NX` (shown in the application header) |
+| **Detailed change log** | [`changelog.md`](changelog.md) — dated entries for every batch |
+| **Implementation notes** | [`cat-ftx1-NXC.md`](cat-ftx1-NXC.md) — long-form design narrative (§§ 1–23) |
+| **Hamlib / rigctld decision** | [`Hamlib-Research.md`](Hamlib-Research.md) — why we expose `rigctld` without bundling Hamlib |
+| **Screenshots** | [`docs/`](docs/) — UI captures and reference images (listed below) |
+
+### Screenshots (`docs/`)
+
+Images below use paths relative to this repository so they display on GitHub and in local Markdown viewers. The Yaesu CAT manual PDF is also in `docs/` for the Preset Builder catalogue.
+
+#### Main interface
+
+| | |
+|---|---|
+| Original author UI (reference) | NX fork main page (`V2.2-NX`) |
+| ![Original console](docs/ui-screenshot.png) | ![Main page](docs/main_page.png) |
+
+#### Appearance and presets
+
+| Feature | Screenshot |
+|---|---|
+| Appearance / theme settings | ![Settings](docs/Settings.png) |
+| Presets on the main page | ![Presets](docs/presets.png) |
+| Preset editor | ![Preset editor](docs/preset_editor.png) |
+| Category-browsing command picker | ![Command picker by category](docs/preset_builder_cat_category_select.png) |
+| Command catalogue / help reference | ![Preset Builder command catalog](docs/Preset_Builder_command_catalog.jpg) |
+| CAT command quick reference | ![CAT command reference](docs/cat_command_reference.png) |
+
+#### `rigctld` relay and reference
+
+| Feature | Screenshot |
+|---|---|
+| Live **rigctld :4532** terminal panel (next to Band Scope) | ![rigctld server panel](docs/rigctld_server.png) |
+| CAT protocol reference card | ![CAT reference](docs/CAT-Reference.png) |
+
+#### Manual (not a screenshot)
+
+- [`docs/CAT-FTX1.pdf`](docs/CAT-FTX1.pdf) — Yaesu FTX-1 CAT manual (source for the 90-command catalogue in the Preset Builder)
+
+### Security and deployment
+
+- **Phase 0 security hardening** — serial-server bound to loopback, per-launch Bearer token on the HTTP API, DNS-rebinding host check, SSE proxied through Nuxt so tokens never reach the browser.
+- **LAN access with IP allowlist** — optional exposure on the LAN; every HTTP request is gated by `ALLOWED_IPS` (comma-separated IPs/CIDRs; default loopback only). Same variable gates the `rigctld` TCP relay (see below).
+- **Electron packaging path** — desktop build via `electron/` + `electron-builder.yml` (see project docs for build steps).
+
+### User interface and settings
+
+- **Appearance settings drawer** — customise colours, fonts, and corner radius; changes apply live.
+- **Theme persistence in SQLite** — appearance overrides survive browser cache clears (`settings.theme_overrides` in the database, with `localStorage` as a fast shadow).
+- **Settings API fix** — call sign and theme saves no longer fail with HTTP 500 (SQLite `datetime('now')` quoting corrected).
+- **Header version label** — fork build shown as `V2.2-NX` next to “CAT CONTROLLER” (single source: `runtimeConfig.public.appVersion` in `nuxt.config.ts`).
+- **Status badge robustness** — boolean props coerced correctly when the radio reports `0`/`1` numeric flags.
+
+### Presets (JSON workflow)
+
+Presets remain in **`cat-presets.json`** (not the dormant DB preset tables). The Preset Manager opens from the **Presets** header (◈ button).
+
+- **Preset Builder rewrite** — clean modal UI for creating, editing, and deleting presets; list-first workflow when opening the manager.
+- **90-command CAT catalogue** — authoritative command list parsed from `docs/CAT-FTX1.pdf`, with descriptions and parameter rules in `components/cat-commands-ftx1.ts`.
+- **Smart parameter validation** — warns on questionable values; **blocks Save** on hard validation errors.
+- **Command help (`?`)** — modal with manual page-4 usage notes and a sortable/filterable quick-reference table.
+- **Category-browsing command picker** — replaces the narrow browser `<datalist>`; browse commands by category in a wide, viewport-anchored panel (keyboard: ↑↓, Enter, Esc; auto-flips when near screen edges).
+- **Binary toggle-switch presets** — for on/off CAT commands (e.g. **BI** Break-In, **TS** TX Watch, **LK**, **MX**, **ST**, **VX**): optional `toggle: true` turns the preset button into a stateful switch with a **green/red LED** that tracks the radio via SSE (including changes made on the front panel).
+- **Rocket-launch toggle visual (opt-in)** — per preset, `toggleSwitch: true` renders a bat-handle switch on a dark panel instead of the flat button + LED.
+- **Optional step timing (Settings → Preset execution)** — off by default for FTX-1. When enabled, Preset Builder exposes per-step **Delay (ms)** and **Await**; saved presets may use `{ "command": "…", "delayMs": 150, "await": true }` objects for slow legacy rigs (e.g. Kenwood TS-850S @ 4800 bps) or Raspberry Pi-class hosts.
+
+### Macros (legacy — UI hidden)
+
+The SQLite macro system and `/api/macros*` endpoints remain in the codebase, but the **Macro Builder**, quick-run dropdown, and ☰ header button are **hidden** in this fork — **JSON presets** are the primary workflow. To re-enable the macro UI for development, set `SHOW_MACRO_UI = true` in `pages/index.vue`.
+
+### Band scope and CAT bridge
+
+- **Band scope level display fix** — LEVEL bar visual alignment corrected.
+- **Manual CAT command** — type commands at the bottom of the main page; optional await for the radio reply.
+- **Extended serial-server state** — additional FTX-1 parameters tracked for SSE (e.g. **BI**, **TS**, band scope sub-fields) so the UI and toggles stay in sync without per-click polling.
+- **In-process radio simulator** — optional `SIMULATE_RIG=1` adds a virtual `SIM-FTX1` port for development without hardware.
+
+### `rigctld` TCP relay (external app integration)
+
+Run **WSJT-X**, **Fldigi**, **JS8Call**, **Gpredict**, **N1MM**, **CQRLOG**, and other Hamlib-aware programs **alongside** this app on the **same** radio connection — without a second serial port or a bundled Hamlib install.
+
+| Item | Detail |
+|---|---|
+| **Protocol** | Subset of Hamlib `rigctld` text protocol on TCP **port 4532** (default) |
+| **Implementation** | `rigctld-relay.mjs` inside `serial-server.mjs` |
+| **Virtual split** | Software-only split (no hardware `ST1`) — compatible with satellite/Doppler workflows; matches Hamlib FTX-1 backend behaviour |
+| **Security** | Each TCP connection checked against `ALLOWED_IPS` before any data is exchanged |
+| **Live terminal panel** | When a client connects, a **rigctld :4532** panel appears next to **Band Scope** showing colour-coded RX/TX traffic, client IP(s), auto-scroll, and a resizable log area |
+
+**WSJT-X quick setup:** *Settings → Radio → Rig: **Hamlib NET rigctl** → Network Server: `127.0.0.1:4532` → PTT Method: **CAT** → Split Operation: **Rig**.*
+
+Environment variables (serial-server):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `RIGCTLD_ENABLE` | `1` | Set `0` to disable the relay |
+| `RIGCTLD_PORT` | `4532` | TCP port |
+| `RIGCTLD_HOST` | `0.0.0.0` | Bind address (`127.0.0.1` to refuse non-loopback at OS level) |
+| `RIGCTLD_DEBUG` | `0` | Set `1` to log every line in the serial-server console |
+| `ALLOWED_IPS` | `127.0.0.1/8,::1` | Shared with the HTTP API allowlist |
+
+### Documentation shipped with this fork
+
+| File | Contents |
+|---|---|
+| [`changelog.md`](changelog.md) | Chronological list of all NX changes |
+| [`cat-ftx1-NXC.md`](cat-ftx1-NXC.md) | Session change log with verification checklists |
+| [`SECURITY-AUDIT.md`](SECURITY-AUDIT.md) | Security review and threat model |
+| [`Hamlib-Research.md`](Hamlib-Research.md) | Hamlib integration assessment + rigctld smoke-test notes |
+
+### Fork maintainer
+
+**NX fork:** **Max Elevation** — based on the original work by **SP9AX**.  
+GitHub: https://github.com/phrancky5/cat-ftx1
+
+For the complete per-feature history, start with [`changelog.md`](changelog.md) (newest entries first) or [`cat-ftx1-NXC.md`](cat-ftx1-NXC.md) §§ 9–24 for the follow-on batches after the initial security hardening.
+
+### Keeping another PC in sync
+
+After the first `git clone`, use **`git pull`** on each machine before you start work:
+
+```powershell
+cd cat-ftx1
+git pull
+```
+
+If `package-lock.json` changed, run `npm install` (and `npm rebuild better-sqlite3` on Windows if the native module fails to load). If the changelog mentions a SQL migration, apply it once per existing database:
+
+```powershell
+sqlite3 data/cat-ftx1.db ".read sql/migrate-add-preset-timing-settings.sql"
+```
+
+Then restart `serial-server.mjs` and `npm run dev`. Commit and push from the machine where you made changes; pull on the others — standard Git workflow, no special sync tool required.

@@ -86,6 +86,11 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { isBinaryToggleCommand, TOGGLE_STATE_FIELDS } from './cat-commands-ftx1'
+import {
+  parsePresetCommandEntry,
+  presetCommandCount,
+  type PresetCommandEntry,
+} from './preset-command-utils'
 
 interface Preset {
   id: string
@@ -93,7 +98,7 @@ interface Preset {
   color?: string
   icon?: string
   description?: string
-  commands: string[]
+  commands: PresetCommandEntry[]
   /** When true, render as a binary 0/1 toggle switch. See cat-commands-ftx1.ts. */
   toggle?: boolean
   /**
@@ -149,9 +154,11 @@ const btnStyle = computed(() => ({
 
 // ── Toggle-mode plumbing ───────────────────────────────────────────────
 /** First step's 2-letter code, or '' when missing. */
+const commandStepCount = computed(() => presetCommandCount(props.preset.commands))
+
 const toggleCode = computed<string>(() => {
-  const raw = props.preset.commands?.[0] ?? ''
-  return raw.slice(0, 2).toUpperCase()
+  const first = props.preset.commands?.[0]
+  return parsePresetCommandEntry(first).command.slice(0, 2).toUpperCase()
 })
 
 /** True when this preset is configured as a toggle AND the code is eligible. */
@@ -240,14 +247,15 @@ function onClick() {
 async function executeSequence() {
   running.value = true
   flashState.value = null
-  progress.value = `0 / ${props.preset.commands.length}`
+  const total = commandStepCount.value
+  progress.value = `0 / ${total}`
 
   let progressInterval: ReturnType<typeof setInterval> | null = null
   let step = 0
   progressInterval = setInterval(() => {
-    if (step < props.preset.commands.length - 1) {
+    if (step < total - 1) {
       step++
-      progress.value = `${step} / ${props.preset.commands.length}`
+      progress.value = `${step} / ${total}`
     }
   }, 120)
 

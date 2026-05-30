@@ -86,6 +86,12 @@ CREATE TABLE IF NOT EXISTS settings (
   font_mono       TEXT    NOT NULL DEFAULT 'Courier New',
   radius_px       INTEGER NOT NULL DEFAULT 8,
   theme_overrides TEXT,                                      -- JSON: {"--bg":"#...",...} or NULL
+  -- Preset execution timing (off by default — FTX-1 is fast; enable for
+  -- legacy/slow rigs e.g. Kenwood TS-850S @ 4800 bps or Raspberry Pi hosts).
+  preset_timing_enabled  INTEGER NOT NULL DEFAULT 0
+                         CHECK (preset_timing_enabled IN (0, 1)),
+  preset_default_delay_ms INTEGER NOT NULL DEFAULT 100
+                         CHECK (preset_default_delay_ms BETWEEN 0 AND 60000),
   created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
   updated_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );

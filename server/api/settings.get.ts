@@ -17,15 +17,34 @@ function parseThemeOverrides(raw: unknown): Record<string, string> | null {
   return null
 }
 
-export default defineEventHandler(async () => {
-  const db = useDb()
+function selectSettingsRow(db: ReturnType<typeof useDb>) {
   try {
+    return db.prepare(`
+      SELECT call_sign, color_primary, color_accent, color_bg,
+             font_mono, radius_px, theme_overrides,
+             preset_timing_enabled, preset_default_delay_ms
+      FROM   settings
+      WHERE  rig_id = 'ftx1'
+    `).get() as any
+  } catch {
     const row = db.prepare(`
       SELECT call_sign, color_primary, color_accent, color_bg,
              font_mono, radius_px, theme_overrides
       FROM   settings
       WHERE  rig_id = 'ftx1'
     `).get() as any
+    if (row) {
+      row.preset_timing_enabled = 0
+      row.preset_default_delay_ms = 100
+    }
+    return row
+  }
+}
+
+export default defineEventHandler(async () => {
+  const db = useDb()
+  try {
+    const row = selectSettingsRow(db)
 
     if (!row) {
       // Seed defaults on first access. The new row picks up the column
@@ -44,12 +63,16 @@ export default defineEventHandler(async () => {
         font_mono: 'Courier New',
         radius_px: 8,
         theme_overrides: null as Record<string, string> | null,
+        preset_timing_enabled: false,
+        preset_default_delay_ms: 100,
       }
     }
 
     return {
       ...row,
       theme_overrides: parseThemeOverrides(row.theme_overrides),
+      preset_timing_enabled: !!row.preset_timing_enabled,
+      preset_default_delay_ms: Number(row.preset_default_delay_ms) || 100,
     }
   } catch (err: any) {
     console.error('[settings.get]', err?.message ?? err)

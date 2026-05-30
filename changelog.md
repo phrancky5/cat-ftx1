@@ -5,6 +5,65 @@ Format: each entry is dated `YYYY-MM-DD HH:MM` (local Europe/Warsaw, UTC+2).
 
 ---
 
+## 2026-05-30 12:52 — Optional preset step timing; legacy macro UI hidden
+
+Prepares the JSON preset workflow for future multi-rig support (slow serial rigs such as Kenwood TS-850S @ 4800 bps, or low-power hosts such as Raspberry Pi) without slowing down the default FTX-1 path.
+
+### Added
+
+- **Settings → Preset execution** — global toggle `preset_timing_enabled` (default **off**) and `preset_default_delay_ms` (default **100**). Stored in SQLite `settings` table.
+- **Per-step timing in presets** — when timing is enabled, each step in `cat-presets.json` may be a string (legacy) or an object `{ "command": "FA014074000", "delayMs": 150, "await": true }`. Delay/await columns appear in Preset Builder only while the setting is on.
+- **`preset-steps.mjs`**, **`components/preset-command-utils.ts`**, **`server/utils/presetSteps.ts`** — shared parse/normalize helpers (client + serial-server + API).
+- **`sql/migrate-add-preset-timing-settings.sql`** — adds `preset_timing_enabled` and `preset_default_delay_ms` to existing databases.
+
+### Changed
+
+- **`serial-server.mjs` `/preset` endpoint** — when timing is **off** (default): unchanged behaviour (60 ms between steps; AI fire-and-forget when AI is on). When timing is **on**: honours per-step `delayMs` (fallback to settings default) and optional `await: true` (2000 ms command timeout).
+- **`server/api/preset-execute.post.ts`** — reads timing settings from DB and passes them to the serial-server.
+- **`components/PresetBuilder.vue`** — Delay/Await step columns (when enabled); serializes timed command objects on save.
+- **`components/PresetButton.vue`** — step count via `presetCommandCount()` so timed objects count correctly.
+- **`pages/index.vue`** — Settings drawer section for preset execution; macro quick-run, ☰ button, macro modal, and macro toast hidden via `SHOW_MACRO_UI = false` (macro DB/API code retained).
+- **`server/api/json-presets.get.ts` / `json-presets.put.ts`** — `PresetCommandEntry` type (string or timed object).
+- **`sql/schema.sql`** — new columns on fresh installs.
+
+### Operator-facing impact
+
+- **Default (timing off):** FTX-1 presets behave exactly as before; no action required on upgrade except running the SQL migration on existing installs.
+- **Timing on:** use Preset Builder to set per-step delays and optional await for slow rigs or weak hosts.
+- **Macros:** no longer shown in the main UI; use JSON presets instead. Macro tables and `/api/macros*` endpoints remain in the codebase.
+
+### Existing database migration
+
+On any machine that already has `data/cat-ftx1.db`, run once:
+
+```powershell
+sqlite3 data/cat-ftx1.db ".read sql/migrate-add-preset-timing-settings.sql"
+```
+
+Fresh installs pick up the columns from `sql/schema.sql` automatically.
+
+### Files touched
+
+- `preset-steps.mjs` (new)
+- `components/preset-command-utils.ts` (new)
+- `server/utils/presetSteps.ts` (new)
+- `sql/migrate-add-preset-timing-settings.sql` (new)
+- `serial-server.mjs`
+- `server/api/preset-execute.post.ts`
+- `server/api/settings.get.ts`
+- `server/api/settings.put.ts`
+- `server/api/json-presets.get.ts`
+- `server/api/json-presets.put.ts`
+- `components/PresetBuilder.vue`
+- `components/PresetButton.vue`
+- `pages/index.vue`
+- `sql/schema.sql`
+- `README.md`
+- `cat-ftx1-NXC.md`
+- `changelog.md`
+
+---
+
 ## 2026-05-29 00:04 — Header version label bumped `V2.1-NX` → `V2.2-NX`
 
 Marks the addition of § 23 (the only narrative section added since `V2.1-NX`) — a feature substantial enough to deserve its own minor-version digit:

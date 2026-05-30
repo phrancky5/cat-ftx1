@@ -19,6 +19,7 @@ import { SerialPort } from 'serialport'
 import { ReadlineParser } from '@serialport/parser-readline'
 import { RigctldRelay } from './rigctld-relay.mjs'
 import { isAllowedRemoteAddress, getAllowedIpsSpec } from './ip-allowlist.mjs'
+import { normalizePresetSteps } from './preset-steps.mjs'
 
 const PORT = 3001
 const DEBUG = false
@@ -824,27 +825,54 @@ const server = http.createServer(async (req, res) => {
     // ── POST /preset ────────────────────────────────────
     if (url.pathname === '/preset' && req.method === 'POST') {
       const body = await readBody(req)
-      if (!Array.isArray(body?.commands) || body.commands.length === 0) {
+      const steps = Array.isArray(body?.steps)
+        ? body.steps
+        : normalizePresetSteps(body?.commands)
+      if (steps.length === 0) {
         return send(res, 400, { error: 'commands array is required' })
       }
-      const noWait = manager.state.autoInfo === true
+
+      const timingEnabled = body?.timingEnabled === true
+      const defaultDelayMs = Math.max(0, Math.min(60000, Number(body?.defaultDelayMs) || 100))
+      const noWaitFast = manager.state.autoInfo === true
       const results = []
-      for (const raw of body.commands) {
-        const cmd = String(raw).replace(/;+$/, '').trim()
+
+      for (let i = 0; i < steps.length; i++) {
+        const step = typeof steps[i] === 'string'
+          ? { command: String(steps[i]).replace(/;+$/, '').trim(), await: false }
+          : steps[i]
+        const cmd = String(step.command ?? '').replace(/;+$/, '').trim()
         if (!cmd) continue
+
+        const stepAwait = timingEnabled && step.await === true
+        const delayAfter = timingEnabled
+          ? Math.max(0, Math.min(60000, Number(step.delayMs ?? defaultDelayMs) || defaultDelayMs))
+          : 60
+
         try {
-          if (noWait) {
+          if (stepAwait) {
+            const response = await manager.sendCommand(cmd, 2000)
+            results.push({ command: cmd, response, ok: true })
+          } else if (!timingEnabled && noWaitFast) {
             await manager.sendCommandNoWait(cmd)
             results.push({ command: cmd, ok: true })
-          } else {
+          } else if (!timingEnabled) {
             const response = await manager.sendCommand(cmd, 1500)
             results.push({ command: cmd, response, ok: true })
+          } else {
+            // Timing on, no per-step await — fire-and-forget then pause.
+            await manager.sendCommandNoWait(cmd)
+            results.push({ command: cmd, ok: true })
           }
         } catch (err) {
           results.push({ command: cmd, error: err.message, ok: false })
         }
-        await new Promise(r => setTimeout(r, 60))
+
+        if (i < steps.length - 1 && delayAfter > 0) {
+          await new Promise(r => setTimeout(r, delayAfter))
+        }
       }
+
       const anyFailed = results.some(r => !r.ok)
       return send(res, anyFailed ? 207 : 200, { ok: !anyFailed, results, state: manager.getState() })
     }

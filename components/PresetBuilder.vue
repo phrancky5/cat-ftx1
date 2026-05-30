@@ -170,14 +170,26 @@
 
           <!-- Friendly step editor -->
           <div v-if="!advancedRaw" class="pb-steps">
-            <div class="pb-steps-headrow" v-if="steps.length > 0">
+            <div
+              class="pb-steps-headrow"
+              :class="{ 'pb-steps-grid--timing': presetTimingEnabled }"
+              v-if="steps.length > 0"
+            >
               <span class="pb-h pb-h-pos">#</span>
               <span class="pb-h pb-h-cmd">Command</span>
               <span class="pb-h pb-h-param">Parameter</span>
+              <template v-if="presetTimingEnabled">
+                <span class="pb-h pb-h-delay" title="Pause after this step (ms)">Delay</span>
+                <span class="pb-h pb-h-await" title="Wait for radio reply before next step">Await</span>
+              </template>
               <span class="pb-h pb-h-preview">Sent to radio</span>
               <span class="pb-h pb-h-validate" title="Validation against the FTX-1 CAT manual">✓</span>
               <span class="pb-h pb-h-act"></span>
             </div>
+            <p v-if="presetTimingEnabled" class="pb-timing-hint">
+              Step timing is <strong>on</strong> (Settings). Use for slow rigs (e.g. Kenwood @ 4800&nbsp;bps) or low-power hosts.
+              Default gap: {{ presetDefaultDelayMs }}&nbsp;ms when a step leaves Delay empty.
+            </p>
 
             <div v-if="steps.length === 0" class="pb-steps-empty">
               No steps yet. Click <strong>+ Add command</strong> below.
@@ -187,7 +199,10 @@
               v-for="(s, idx) in steps"
               :key="s.key"
               class="pb-step-row"
-              :class="`pb-step-row--${stepValidations[idx]?.level ?? 'ok'}`"
+              :class="[
+                `pb-step-row--${stepValidations[idx]?.level ?? 'ok'}`,
+                { 'pb-steps-grid--timing': presetTimingEnabled },
+              ]"
               :data-step-key="s.key"
             >
               <span class="pb-step-pos">{{ idx + 1 }}</span>
@@ -243,6 +258,23 @@
                   {{ paramHintOf(s.code) }}
                 </small>
               </div>
+
+              <template v-if="presetTimingEnabled">
+                <div class="pb-step-delay-cell">
+                  <input
+                    v-model.number="s.delayMs"
+                    type="number"
+                    min="0"
+                    max="60000"
+                    step="10"
+                    class="pb-step-delay-input"
+                    :title="`Pause after this command (default ${presetDefaultDelayMs} ms)`"
+                  />
+                </div>
+                <label class="pb-step-await-cell" :title="'Wait for reply (' + s.code + ')'">
+                  <input v-model="s.await" type="checkbox" />
+                </label>
+              </template>
 
               <code class="pb-step-preview" :title="`Will be sent as: ${rawOf(s)};`">{{ rawOf(s) }};</code>
 
@@ -604,6 +636,10 @@ import {
   type CommandDef,
   type ValidationResult,
 } from './cat-commands-ftx1'
+import {
+  parsePresetCommandEntry,
+  type PresetCommandEntry,
+} from './preset-command-utils'
 
 interface Preset {
   id: string
@@ -611,7 +647,7 @@ interface Preset {
   color?: string
   icon?: string
   description?: string
-  commands: string[]
+  commands: PresetCommandEntry[]
   /**
    * Marks this preset as a binary 0/1 toggle switch. The on-screen
    * button shows a green/red LED, reads the radio's current state and
@@ -633,6 +669,10 @@ interface Step {
   key: number
   code: string
   param: string
+  /** Pause after this step (ms) when preset timing is enabled in settings. */
+  delayMs: number
+  /** Wait for radio reply before the next step. */
+  await: boolean
 }
 
 // ── Catalogue access — defFor() preserved as the single in-template helper
@@ -658,9 +698,15 @@ function paramDefaultOf(code: string): string | undefined {
   return findCommand(code)?.paramDefault
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   openPresetId?: string | number | null
-}>()
+  /** From settings — when false, per-step delay/await are stored but ignored at run time. */
+  presetTimingEnabled?: boolean
+  presetDefaultDelayMs?: number
+}>(), {
+  presetTimingEnabled: false,
+  presetDefaultDelayMs: 100,
+})
 
 const emit = defineEmits<{
   close: []
@@ -1103,7 +1149,39 @@ function parseRawToStep(raw: string): Step {
     key: nextKey(),
     code: trimmed.slice(0, 2).toUpperCase(),
     param: trimmed.slice(2),
+    delayMs: props.presetDefaultDelayMs,
+    await: false,
   }
+}
+
+function parseCommandToStep(entry: PresetCommandEntry): Step {
+  const parsed = parsePresetCommandEntry(entry)
+  const trimmed = parsed.command
+  return {
+    key: nextKey(),
+    code: trimmed.slice(0, 2).toUpperCase(),
+    param: trimmed.slice(2),
+    delayMs: parsed.delayMs ?? props.presetDefaultDelayMs,
+    await: parsed.await,
+  }
+}
+
+function serializeCommands(): PresetCommandEntry[] {
+  if (advancedRaw.value) {
+    return rawText.value
+      .split(/\r?\n/)
+      .map((s) => s.replace(/;\s*$/, '').trim())
+      .filter(Boolean)
+  }
+  const defDelay = props.presetDefaultDelayMs
+  return steps.value.map((s) => {
+    const cmd = rawOf(s).trim()
+    if (!s.await && s.delayMs === defDelay) return cmd
+    const o: { command: string, delayMs?: number, await?: boolean } = { command: cmd }
+    if (s.delayMs !== defDelay) o.delayMs = s.delayMs
+    if (s.await) o.await = true
+    return o
+  })
 }
 
 function onCodeInput(s: Step, ev: Event) {
@@ -1157,8 +1235,10 @@ function loadPresetIntoForm(p: Preset) {
     toggle: p.toggle === true,
     toggleSwitch: p.toggleSwitch === true,
   }
-  steps.value = (p.commands ?? []).map(parseRawToStep)
-  rawText.value = (p.commands ?? []).join('\n')
+  steps.value = (p.commands ?? []).map(parseCommandToStep)
+  rawText.value = (p.commands ?? []).map((c) =>
+    typeof c === 'string' ? c : c.command,
+  ).join('\n')
   advancedRaw.value = false
   idError.value = ''
   setStatus('', '')
@@ -1185,6 +1265,8 @@ function addStep(code = '', param = '') {
     key: stepKey,
     code: c,
     param: param || (paramDefaultOf(c) ?? ''),
+    delayMs: props.presetDefaultDelayMs,
+    await: false,
   })
   // Empty step → auto-open the picker so the operator can immediately
   // browse / search. Skipped if the step was created with a known code
@@ -1265,15 +1347,7 @@ async function save() {
   validateId()
   if (idError.value) return
 
-  let commands: string[]
-  if (advancedRaw.value) {
-    commands = rawText.value
-      .split(/\r?\n/)
-      .map((s) => s.replace(/;\s*$/, '').trim())
-      .filter(Boolean)
-  } else {
-    commands = steps.value.map(rawOf).map((s) => s.trim()).filter(Boolean)
-  }
+  const commands = serializeCommands()
   if (commands.length === 0) {
     setStatus('At least one command is required.', 'err')
     return
@@ -1755,6 +1829,41 @@ function extractError(err: any): string {
   gap: 8px;
   align-items: center;
 }
+
+.pb-steps-headrow.pb-steps-grid--timing,
+.pb-step-row.pb-steps-grid--timing {
+  grid-template-columns:
+    28px minmax(140px, 1fr) minmax(160px, 1.1fr)
+    72px 44px minmax(120px, 0.85fr) 28px 88px;
+}
+
+.pb-timing-hint {
+  margin: 0 8px 8px;
+  font-size: 11px;
+  color: #8b949e;
+  line-height: 1.4;
+}
+
+.pb-step-delay-input {
+  width: 100%;
+  max-width: 68px;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  color: #e6edf3;
+}
+
+.pb-step-await-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.pb-step-await-cell input { cursor: pointer; }
 
 .pb-steps-headrow {
   padding: 4px 8px;
