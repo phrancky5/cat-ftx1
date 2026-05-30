@@ -1,0 +1,45 @@
+
+# Nuxt dev/build outputs
+.output
+.data
+.nuxt
+.nitro
+.cache
+dist
+
+# Node dependencies
+node_modules
+
+# Logs
+logs
+*.log
+
+# Misc
+.DS_Store
+.idea
+.vscode/
+*.swp
+
+# User data (SQLite DB created on first run)
+data/
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+# Bundled archives — never in source control
+*.rar
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+
+# Local scratch / personal-machine helpers (operator-only, not for shared repo)
+dir.txt
+back.bat
+
+# OS-level temp / lock files
+Thumbs.db
+desktop.ini

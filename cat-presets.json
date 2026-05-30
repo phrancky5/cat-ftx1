@@ -1,0 +1,68 @@
+{
+  "presets": [
+    {
+      "id": "aprs-on",
+      "label": "APRS ON",
+      "color": "#f59e0b",
+      "description": "APRS ON for SUB VFO",
+      "commands": [
+        "VS0",
+        "BS113",
+        "MD1A",
+        "EX0601013",
+        "EX0601020",
+        "FB144800000",
+        "FR00",
+        "FT0"
+      ]
+    },
+    {
+      "id": "aprs-off",
+      "label": "APRS OFF",
+      "color": "#f59e0b",
+      "description": "APRS OFF",
+      "commands": [
+        "VS0",
+        "FR01",
+        "BS113",
+        "MD14",
+        "EX0601010",
+        "FB144775000",
+        "FR00"
+      ]
+    },
+    {
+      "id": "test",
+      "label": "Goto 11 meter CQ Freq USB",
+      "commands": [
+        "VS0",
+        "FB278050000",
+        "MD02",
+        "RM"
+      ],
+      "description": "change freq",
+      "color": "#160bf4"
+    },
+    {
+      "id": "lkonof",
+      "label": "LKONOF",
+      "commands": [
+        "LK1"
+      ],
+      "description": "state lock",
+      "color": "#f59e0b",
+      "toggle": true,
+      "toggleSwitch": true
+    },
+    {
+      "id": "keyin",
+      "label": "IntKey",
+      "commands": [
+        "KR1"
+      ],
+      "description": "Internal Keyer",
+      "color": "#f59e0b",
+      "toggle": true
+    }
+  ]
+}
