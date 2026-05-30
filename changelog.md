@@ -5,6 +5,36 @@ Format: each entry is dated `YYYY-MM-DD HH:MM` (local Europe/Warsaw, UTC+2).
 
 ---
 
+## 2026-05-31 23:59 — Dimmed dashboard when disconnected; Nuxt LAN dev fix
+
+### Added
+
+- **Disconnected dashboard preview** — full UI visible on startup with dimmed/desaturated styling and a centred **Connect** prompt; controls disabled until linked (radio “off” look).
+
+### Fixed
+
+- **Nuxt dev on LAN (`ALLOWED_IPS`)** — `experimental.viteEnvironmentApi: true` fixes `Vite Node IPC socket path not configured` when `ssr: false` and dev server binds `0.0.0.0`.
+
+### Changed
+
+- **`pages/index.vue`** — always render dashboard; `dashboard--disconnected` + `connect-prompt` overlay replaces blank idle screen.
+- **`nuxt.config.ts`** — enable Vite Environment API for SPA dev mode.
+- **`.env.example`** — note on loopback vs LAN URLs.
+
+### Operator notes
+
+- **Loopback only:** plain `npm run dev` → `http://127.0.0.1:3000`.
+- **LAN (Start.ps1):** `ALLOWED_IPS` with your subnet → `0.0.0.0` bind; verified local + LAN after restart.
+
+### Files touched
+
+- `pages/index.vue`
+- `nuxt.config.ts`
+- `.env.example`
+- `changelog.md`
+
+---
+
 ## 2026-05-31 23:55 — Saved channels in `cat-channels.json` (presets model)
 
 ### Changed

@@ -24,6 +24,11 @@ console.log(
 export default defineNuxtConfig({
   devtools: { enabled: false },
   ssr: false,
+  // SPA mode: without this, Nuxt 3.21+ dev can fail with
+  // "Vite Node IPC socket path not configured" (especially on LAN / 0.0.0.0).
+  experimental: {
+    viteEnvironmentApi: true,
+  },
   devServer: { host: RESOLVED_DEV_HOST },
   runtimeConfig: {
     serialServerUrl: process.env.NUXT_SERIAL_SERVER_URL

@@ -264,8 +264,8 @@
       <button class="close-btn" @click="lastError = null">✕</button>
     </div>
 
-    <!-- ── Main dashboard (only when connected) ── -->
-    <main v-if="state.connected" class="dashboard">
+    <!-- ── Main dashboard (dimmed when disconnected — radio “off”) ── -->
+    <main class="dashboard" :class="{ 'dashboard--disconnected': !state.connected }">
 
       <!-- TX/RX Indicator + FUNC KNOB row -->
       <div class="txbar">
@@ -807,11 +807,11 @@
       </section>
     </main>
 
-    <!-- ── Not connected screen ── -->
-    <div v-else class="idle-screen">
-      <div class="idle-icon">📡</div>
+    <!-- ── Connect prompt (over dimmed dashboard before link) ── -->
+    <div v-if="!state.connected" class="connect-prompt">
+      <div class="connect-prompt__icon">📡</div>
       <p>Select a serial port and click <strong>Connect</strong> to start.</p>
-      <p class="idle-hint">
+      <p class="connect-prompt__hint">
         On macOS, FTX-1 appears as <code>/dev/cu.SLAB_USBtoUART</code> or similar.<br>
         Default baud rate: <strong>38400</strong> for CAT-1 and <strong>4800</strong> for CAT-2.
       </p>
@@ -3408,6 +3408,7 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  position: relative;
 }
 
 /* ── Header ── */
@@ -4403,23 +4404,40 @@ body {
   white-space: nowrap;
 }
 
-/* ── Idle screen ── */
-.idle-screen {
-  flex: 1;
+/* ── Disconnected / radio off ── */
+.dashboard--disconnected {
+  opacity: 0.38;
+  filter: brightness(0.52) saturate(0.55);
+  pointer-events: none;
+  user-select: none;
+}
+
+.connect-prompt {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 12px;
-  color: var(--text-muted);
+  color: var(--text);
   text-align: center;
-  padding: 40px;
+  padding: 32px 40px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, .45);
+  max-width: 420px;
+  width: 90%;
+  pointer-events: auto;
 }
 
-.idle-icon { font-size: 64px; line-height: 1; }
-.idle-screen p { font-size: 15px; line-height: 1.6; }
-.idle-hint { font-size: 13px; }
-.idle-hint code {
+.connect-prompt__icon { font-size: 48px; line-height: 1; }
+.connect-prompt p { font-size: 15px; line-height: 1.6; margin: 0; }
+.connect-prompt__hint { font-size: 13px; color: var(--text-muted); }
+.connect-prompt__hint code {
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: 4px;
