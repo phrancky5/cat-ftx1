@@ -191,15 +191,19 @@
                 :id="`theme-${key}`"
                 type="color"
                 :value="themeValue(key)"
-                @input="setThemeVar(key, ($event.target as HTMLInputElement).value)"
+                @input="onColorPickerInput(key, ($event.target as HTMLInputElement).value)"
               >
               <input
                 type="text"
                 class="settings-hex"
-                :value="themeValue(key)"
+                :value="hexInputDisplay(key)"
                 spellcheck="false"
                 maxlength="7"
-                @change="setThemeVar(key, ($event.target as HTMLInputElement).value)"
+                :title="`Type #RRGGBB then Enter or click away (${key})`"
+                @input="onHexDraftInput(key, ($event.target as HTMLInputElement).value)"
+                @blur="onHexDraftCommit(key)"
+                @keydown.enter.prevent="onHexDraftCommit(key)"
+                @keydown.esc.prevent="onHexDraftCancel(key)"
               >
             </div>
           </section>
@@ -1167,9 +1171,45 @@ const FONT_OPTIONS = [
 const THEME_STORAGE_KEY = 'cat_theme'
 const showSettings = ref(false)
 const themeOverrides = ref<Record<string, string>>({})
+/** In-progress hex typed in settings (controlled inputs revert without this). */
+const hexDraft = ref<Record<string, string>>({})
 
 function themeValue(key: string): string {
   return themeOverrides.value[key] ?? THEME_DEFAULTS[key] ?? ''
+}
+
+function hexInputDisplay(key: string): string {
+  return hexDraft.value[key] ?? themeValue(key)
+}
+
+function onHexDraftInput(key: string, raw: string): void {
+  hexDraft.value = { ...hexDraft.value, [key]: raw }
+}
+
+function onHexDraftCancel(key: string): void {
+  const next = { ...hexDraft.value }
+  delete next[key]
+  hexDraft.value = next
+}
+
+function normalizeHexColor(raw: string): string | null {
+  let v = String(raw ?? '').trim()
+  if (/^[0-9a-fA-F]{6}$/.test(v)) v = `#${v}`
+  if (!/^#[0-9a-fA-F]{6}$/.test(v)) return null
+  return v.toLowerCase()
+}
+
+function onHexDraftCommit(key: string): void {
+  const draft = hexDraft.value[key]
+  onHexDraftCancel(key)
+  if (draft == null) return
+  const normalized = normalizeHexColor(draft)
+  if (normalized) setThemeVar(key, normalized)
+}
+
+function onColorPickerInput(key: string, value: string): void {
+  onHexDraftCancel(key)
+  setThemeVar(key, value)
 }
 
 const themeRadiusPx = computed(() => {
