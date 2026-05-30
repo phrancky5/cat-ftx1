@@ -105,6 +105,7 @@ Images below use paths relative to this repository so they display on GitHub and
 - **Settings API fix** — call sign and theme saves no longer fail with HTTP 500 (SQLite `datetime('now')` quoting corrected).
 - **Header version label** — fork build shown as `V2.2-NX` next to “CAT CONTROLLER” (single source: `runtimeConfig.public.appVersion` in `nuxt.config.ts`).
 - **Settings hex colour entry** — type `#RRGGBB` directly in the appearance drawer (draft-on-focus; no revert while typing).
+- **VFO frequency font** — Settings → **Layout → `--font-vfo`**; default **AutopromPro Black Rounded** (Yaesu-style MHz readout, loaded from CDN — not bundled in repo); UI monospace remains on `--font-mono`.
 - **Status badge robustness** — boolean props coerced correctly when the radio reports `0`/`1` numeric flags.
 
 ### Saved channels (browser localStorage)
@@ -174,6 +175,7 @@ Environment variables (serial-server):
 | [`cat-ftx1-NXC.md`](cat-ftx1-NXC.md) | Session change log with verification checklists |
 | [`SECURITY-AUDIT.md`](SECURITY-AUDIT.md) | Security review and threat model |
 | [`Hamlib-Research.md`](Hamlib-Research.md) | Hamlib integration assessment + rigctld smoke-test notes |
+| [`docs/INSTALLATION.md`](docs/INSTALLATION.md) | **Installation guide** — prerequisites, `npm install`, database, ports, troubleshooting |
 
 ### Fork maintainer
 

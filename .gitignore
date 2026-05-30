@@ -28,6 +28,9 @@ data/
 .env.*
 !.env.example
 
+# VFO display font — not redistributed; browser loads from CDN when AutopromPro is selected
+public/fonts/
+
 # Bundled archives — never in source control
 *.rar
 *.zip

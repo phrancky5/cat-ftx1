@@ -234,6 +234,18 @@
                 <option v-for="f in FONT_OPTIONS" :key="f.value" :value="f.value">{{ f.label }}</option>
               </select>
             </div>
+            <div class="settings-row settings-row--wide">
+              <label for="theme-font-vfo">--font-vfo</label>
+              <select
+                id="theme-font-vfo"
+                class="settings-select"
+                :value="themeValue('--font-vfo')"
+                @change="setThemeVar('--font-vfo', ($event.target as HTMLSelectElement).value)"
+              >
+                <option v-for="f in VFO_FONT_OPTIONS" :key="f.value" :value="f.value">{{ f.label }}</option>
+              </select>
+            </div>
+            <p class="settings-font-hint">VFO frequency readout only (MAIN and SUB MHz display).</p>
           </section>
         </div>
 
@@ -1277,6 +1289,7 @@ const THEME_DEFAULTS: Record<string, string> = {
   '--vfo-card-sub':  '#161b22',
   '--radius':        '8px',
   '--font-mono':     "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+  '--font-vfo':      "'AutopromPro Black Rounded', var(--font-mono)",
 }
 
 const COLOR_VARS = [
@@ -1294,6 +1307,16 @@ const FONT_OPTIONS = [
   { value: "Consolas, monospace",                                 label: 'Consolas' },
   { value: "'Courier New', monospace",                            label: 'Courier New' },
   { value: "monospace",                                           label: 'System default' },
+]
+
+/** MAIN/SUB MHz readout only — default matches Yaesu FTX-1-style AutopromPro. */
+const VFO_FONT_OPTIONS = [
+  { value: "'AutopromPro Black Rounded', var(--font-mono)", label: 'AutopromPro Black Rounded (Yaesu style)' },
+  { value: 'var(--font-mono)',                                  label: 'Same as UI monospace (--font-mono)' },
+  ...FONT_OPTIONS.map((f) => ({
+    value: f.value,
+    label: f.label.replace(' (default)', ''),
+  })),
 ]
 
 const THEME_STORAGE_KEY = 'cat_theme'
@@ -3307,6 +3330,16 @@ onUnmounted(() => {
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Yaesu-style VFO digit face — loaded from CDN (font file not shipped in repo). */
+@font-face {
+  font-family: 'AutopromPro Black Rounded';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('https://db.onlinewebfonts.com/t/746572e611b9b4c64833f527353ffd6c.woff2') format('woff2'),
+       url('https://db.onlinewebfonts.com/t/746572e611b9b4c64833f527353ffd6c.woff') format('woff');
+}
+
 :root {
   --bg: #0d1117;
   --surface: #161b22;
@@ -3322,6 +3355,7 @@ onUnmounted(() => {
   --vfo-card-sub:  #161b22;
   --radius: 8px;
   --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-vfo: 'AutopromPro Black Rounded', var(--font-mono);
 }
 
 body {
@@ -3854,13 +3888,14 @@ body {
 .freq-tuner {
   display: flex;
   align-items: baseline;
-  font-family: var(--font-mono);
+  font-family: var(--font-vfo);
   font-size: 42px;
   font-weight: 300;
-  letter-spacing: 2px;
+  letter-spacing: 1px;
   color: #e6edf3;
   line-height: 1;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .freq-tuner.freq-sub { font-size: 42px; color: #c9d1d9; }
@@ -5021,6 +5056,13 @@ body {
 
 .settings-hint--tight {
   margin: -4px 0 10px;
+}
+
+.settings-font-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin: 6px 0 0;
+  line-height: 1.4;
 }
 
 .settings-subhead {

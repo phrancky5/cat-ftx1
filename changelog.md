@@ -5,6 +5,38 @@ Format: each entry is dated `YYYY-MM-DD HH:MM` (local Europe/Warsaw, UTC+2).
 
 ---
 
+## 2026-05-31 11:15 — Yaesu VFO font, font selector, installation guide
+
+### Added
+
+- **AutopromPro VFO font** — MAIN/SUB MHz readout uses **AutopromPro Black Rounded** (Yaesu FTX-1-style digits); loaded from **CDN** at runtime — **font file is not committed to GitHub**.
+- **Settings → `--font-vfo`** — dropdown to choose VFO frequency font (AutopromPro default, same as `--font-mono`, or other monospace stacks); persists via theme overrides.
+- **`docs/INSTALLATION.md`** — full installation guide: prerequisites, native build tools, `npm install`, database, ports, simulator, troubleshooting.
+
+### Changed
+
+- **`pages/index.vue`** — `@font-face` points to onlinewebfonts CDN; `.freq-tuner` uses `--font-vfo`.
+- **`README.md`** — links installation guide; documents VFO font CDN behaviour.
+- **`docs/main_page.png`** — refreshed screenshot.
+- **`.gitignore`** — `public/fonts/` excluded so local font copies are never pushed.
+
+### Operator notes
+
+- First load of the Yaesu-style font needs **internet**; offline shacks can pick **Same as UI monospace** in Settings.
+- AutopromPro is for **private non-commercial** use; not redistributed in this repository.
+
+### Files touched
+
+- `pages/index.vue`
+- `docs/INSTALLATION.md` (new)
+- `README.md`
+- `changelog.md`
+- `cat-ftx1-NXC.md`
+- `.gitignore`
+- `docs/main_page.png`
+
+---
+
 ## 2026-05-30 22:38 — Saved channels, band UX, startup port fallback, settings fix
 
 Follow-on UX and reliability batch after preset timing and offline sync tooling. Main-page screenshot updated (`docs/main_page.png`).

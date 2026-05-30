@@ -1,8 +1,8 @@
 # CAT FTX-1 — NXC Session Change Log
 
 - Project: `cat-ftx1` v1.0.1 (operator-visible build label: `V2.2-NX`)
-- Date: 2026-05-28 / 2026-05-30
-- Status: Phase 0 (security hardening) verified by operator. Follow-on batches through § 14 (LAN allowlist, simulator response, bandscope fix, theming, macros DB backend, macro builder UI) implemented and verified. 2026-05-27 session added §§ 15–18: cross-workstation source sync, **PresetBuilder rewrite + JSON-driven preset workflow**, **appearance-settings persistence in the database** (`settings.theme_overrides` column), and a **`V2.0-NX` fork identifier** rendered in the header (single-source via `runtimeConfig.public.appVersion`). 2026-05-28 session added § 19: **Smart Preset Builder + CAT command catalogue parsed from `docs/CAT-FTX1.pdf`** — 90-command authoritative catalogue, smart parameter validator (Save blocked on hard errors, warns on conditional / out-of-range), and a `?` help modal carrying the manual's page-4 usage primer plus a sortable / filterable quick-reference table. Same session added § 20: **Category-browsing Command Picker** — replaces the browser-native `<datalist>` with a custom viewport-anchored panel that browses all 90 catalogued commands by category, with auto-flip placement, keyboard navigation (`↑↓` / `Enter` / `Esc`), click-outside dismissal, and live tracking on scroll. § 21: **Binary toggle-switch presets** — eligible 0/1 CAT commands (LK, MX, ST, VX, BI, TS) can be marked `toggle: true` and render as stateful on/off buttons with a live green/red LED, mirroring the radio state via SSE (front-panel changes update the UI). § 22: **Rocket-launch toggle-switch visual style** — opt-in cosmetic variant that draws toggle presets as a physical bat-handle switch on a dark machined panel, controlled per preset via a new `toggleSwitch` flag in `cat-presets.json`. § 23: **`rigctld`-compatible TCP relay + live terminal panel** — `serial-server.mjs` now exposes a small subset of Hamlib's `rigctld` text protocol on port 4532 so external apps (WSJT-X, Fldigi, JS8Call, Gpredict, N1MM, CQRLOG, …) can drive the FTX-1 through our existing serial bridge. Includes per-connection gating via the existing § 9 IP allowlist, Hamlib-style virtual split (no hardware `ST1` ever sent), and a UI terminal panel that pops up next to the Band Scope on first client connect, showing colour-coded RX/TX lines with auto-scroll + resize handle. Companion document: `Hamlib-Research.md` (analysis that led to choosing this architecture over a full Hamlib integration). 2026-05-30 session added § 24: **Optional preset step timing + legacy macro UI hidden** — macro-style `delayMs` / `await` ported into JSON presets behind a Settings toggle (default off for FTX-1); macro builder UI hidden in favour of presets. Same session added § 25: **Saved channels, band UX, port fallback, settings polish** — localStorage saved channels with save modal (label, MHz, MAIN/SUB VFO), inline edit with SSE-safe drafts, band picker meter names, BS→FA/FB refresh, serial-server port probing on Windows, settings hex draft fix, `copy-project.bat`, refreshed `docs/main_page.png`. All sessions verified by the operator on the primary workstation.
+- Date: 2026-05-28 / 2026-05-31
+- Status: Phase 0 (security hardening) verified by operator. Follow-on batches through § 14 (LAN allowlist, simulator response, bandscope fix, theming, macros DB backend, macro builder UI) implemented and verified. 2026-05-27 session added §§ 15–18: cross-workstation source sync, **PresetBuilder rewrite + JSON-driven preset workflow**, **appearance-settings persistence in the database** (`settings.theme_overrides` column), and a **`V2.0-NX` fork identifier** rendered in the header (single-source via `runtimeConfig.public.appVersion`). 2026-05-28 session added § 19: **Smart Preset Builder + CAT command catalogue parsed from `docs/CAT-FTX1.pdf`** — 90-command authoritative catalogue, smart parameter validator (Save blocked on hard errors, warns on conditional / out-of-range), and a `?` help modal carrying the manual's page-4 usage primer plus a sortable / filterable quick-reference table. Same session added § 20: **Category-browsing Command Picker** — replaces the browser-native `<datalist>` with a custom viewport-anchored panel that browses all 90 catalogued commands by category, with auto-flip placement, keyboard navigation (`↑↓` / `Enter` / `Esc`), click-outside dismissal, and live tracking on scroll. § 21: **Binary toggle-switch presets** — eligible 0/1 CAT commands (LK, MX, ST, VX, BI, TS) can be marked `toggle: true` and render as stateful on/off buttons with a live green/red LED, mirroring the radio state via SSE (front-panel changes update the UI). § 22: **Rocket-launch toggle-switch visual style** — opt-in cosmetic variant that draws toggle presets as a physical bat-handle switch on a dark machined panel, controlled per preset via a new `toggleSwitch` flag in `cat-presets.json`. § 23: **`rigctld`-compatible TCP relay + live terminal panel** — `serial-server.mjs` now exposes a small subset of Hamlib's `rigctld` text protocol on port 4532 so external apps (WSJT-X, Fldigi, JS8Call, Gpredict, N1MM, CQRLOG, …) can drive the FTX-1 through our existing serial bridge. Includes per-connection gating via the existing § 9 IP allowlist, Hamlib-style virtual split (no hardware `ST1` ever sent), and a UI terminal panel that pops up next to the Band Scope on first client connect, showing colour-coded RX/TX lines with auto-scroll + resize handle. Companion document: `Hamlib-Research.md` (analysis that led to choosing this architecture over a full Hamlib integration). 2026-05-30 session added § 24: **Optional preset step timing + legacy macro UI hidden** — macro-style `delayMs` / `await` ported into JSON presets behind a Settings toggle (default off for FTX-1); macro builder UI hidden in favour of presets. Same session added § 25: **Saved channels, band UX, port fallback, settings polish** — localStorage saved channels with save modal (label, MHz, MAIN/SUB VFO), inline edit with SSE-safe drafts, band picker meter names, BS→FA/FB refresh, serial-server port probing on Windows, settings hex draft fix, `copy-project.bat`, refreshed `docs/main_page.png`. 2026-05-31 session added § 26: **Yaesu VFO font + installation guide** — AutopromPro Black Rounded on `.freq-tuner` via CDN (not in repo); Settings `--font-vfo` selector; `docs/INSTALLATION.md`. All sessions verified by the operator on the primary workstation.
 - Companion document: `SECURITY-AUDIT.md` (full vulnerability report). Day-to-day modification log: `changelog.md` (root of the project).
 - Scope of this document: every code change made in the cumulative NXC session, in chronological order. Sections 1–8 describe the initial Phase 0 (security hardening) batch; sections 9+ describe each follow-on batch. Where an earlier design was later superseded, the original section carries a note pointing to the replacement.
 
@@ -3291,4 +3291,39 @@ Controlled `:value` on appearance hex text fields reverted on each SSE re-render
 - `copy-project.bat`
 - `docs/main_page.png`
 - `README.md`, `changelog.md`, `cat-ftx1-NXC.md`
+
+## 26. Yaesu VFO font, font selector, installation guide (2026-05-31)
+
+### 26.1 AutopromPro on VFO readout only
+
+Inspired by [X-REVISION-2/cat-ftx1](https://github.com/X-REVISION-2/cat-ftx1): **AutopromPro Black Rounded** on `.freq-tuner` (MAIN/SUB MHz). The **font file is not in the repository** — `@font-face` loads woff2/woff from onlinewebfonts CDN at runtime. Private non-commercial shack use; not redistributed.
+
+Fallback stack: `'AutopromPro Black Rounded', var(--font-mono)`.
+
+### 26.2 Settings `--font-vfo`
+
+**Settings → Appearance → Layout → `--font-vfo`**: AutopromPro (default), same as `--font-mono`, or any monospace stack. Stored in `theme_overrides` / localStorage like other CSS variables.
+
+### 26.3 Installation documentation
+
+**`docs/INSTALLATION.md`** — Node.js, native build tools (`better-sqlite3`, `serialport`), `npm install`, optional `.env`, DB/migrations, ports, simulator, troubleshooting. Linked from README.
+
+### 26.4 `.gitignore`
+
+`public/fonts/` ignored so operators may drop a local woff2 copy without risk of committing it.
+
+### 26.5 Verification
+
+1. Connected UI — MHz digits render in AutopromPro when online.
+2. Settings — switch to Consolas; VFO updates live; refresh persists.
+3. Offline — select **Same as UI monospace** if CDN unreachable.
+4. `git status` — no font binary under `public/fonts/` staged.
+
+### 26.6 Files touched
+
+- `pages/index.vue`
+- `docs/INSTALLATION.md` (new)
+- `README.md`, `changelog.md`, `cat-ftx1-NXC.md`
+- `.gitignore`
+- `docs/main_page.png`
 
