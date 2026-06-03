@@ -1,3 +1,24 @@
 {
-  "channels": []
+  "channels": [
+    {
+      "id": "1780519830622",
+      "label": "2m FM",
+      "vfo": "1",
+      "freq": 144800000,
+      "mode": "FM",
+      "sqlType": 0,
+      "ctcssIdx": 0,
+      "dcsIdx": 0
+    },
+    {
+      "id": "1780519833992",
+      "label": "20m USB",
+      "vfo": "0",
+      "freq": 14250000,
+      "mode": "USB",
+      "sqlType": 0,
+      "ctcssIdx": 0,
+      "dcsIdx": 0
+    }
+  ]
 }

@@ -700,7 +700,71 @@
           </div>
         </section>
 
-        <!-- Saved channels panel -->
+        <!-- CAT command terminal panel — shows live CAT commands sent/received
+             Default height is 200px; the bottom edge is draggable to override.
+             Double-click to revert to default. -->
+        <section
+          v-if="catTerminalOpen"
+          class="cat-terminal-panel"
+          :style="catPanelHeight ? { height: catPanelHeight + 'px' } : undefined"
+        >
+          <div class="cat-terminal-header">
+            <span class="scope-title">Live CAT Terminal</span>
+            <span class="cat-terminal-spacer" />
+            <button
+              class="btn btn-ghost btn-icon cat-terminal-icon-btn"
+              :title="catAutoScroll ? 'Auto-scroll: ON' : 'Auto-scroll: OFF (scroll to bottom to re-enable)'"
+              @click="catAutoScroll = !catAutoScroll"
+            >{{ catAutoScroll ? '↧' : '↥' }}</button>
+            <button
+              class="btn btn-ghost btn-icon cat-terminal-icon-btn"
+              title="Clear log"
+              @click="clearCatLog"
+            >⌫</button>
+            <button
+              class="btn btn-ghost btn-icon cat-terminal-icon-btn"
+              title="Close panel"
+              @click="catTerminalOpen = false"
+            >×</button>
+          </div>
+          <div
+            class="cat-terminal-body"
+            ref="catBodyEl"
+            @scroll.passive="onCatScroll"
+          >
+            <div
+              v-for="entry in catLog"
+              :key="entry.id"
+              class="cat-terminal-line"
+              :class="{
+                'cat-terminal-line--out': entry.dir === 'out',
+                'cat-terminal-line--in':  entry.dir === 'in',
+                'cat-terminal-line--error': entry.dir === 'error',
+              }"
+            >
+              <span class="cat-terminal-ts">{{ fmtCatTime(entry.ts) }}</span>
+              <span class="cat-terminal-arrow">
+                {{ entry.dir === 'out' ? '»' : entry.dir === 'in' ? '«' : '✕' }}
+              </span>
+              <span class="cat-terminal-text">{{ entry.text }}</span>
+            </div>
+            <div v-if="catLog.length === 0" class="cat-terminal-empty">
+              Waiting for CAT commands…
+            </div>
+          </div>
+          <!-- Resize handle: drag to set custom height (persisted to localStorage);
+               double-click to revert to default. -->
+          <div
+            class="cat-terminal-resize"
+            :title="catUserHeight === null
+              ? 'Drag to resize · double-click does nothing (using default height)'
+              : 'Drag to resize · double-click to revert to default'"
+            @pointerdown="onCatResizeStart"
+            @dblclick="onCatResizeReset"
+          >
+            <span class="cat-terminal-resize-grip" />
+          </div>
+        </section>
         <section class="channels-panel">
           <div class="channels-header">
             <span class="scope-title">Saved Channels</span>
@@ -804,6 +868,10 @@
         />
         <button class="btn btn-primary btn-sm" @click="sendManualCommand">Send</button>
         <span class="cmd-response" v-if="manualResponse">→ {{ manualResponse }}</span>
+        <label class="cmd-terminal-toggle">
+          <input v-model="catTerminalOpen" type="checkbox" />
+          <span>Live CAT Terminal</span>
+        </label>
       </section>
     </main>
 
@@ -1695,9 +1763,104 @@ function onRigctldScroll() {
   rigctldAutoScroll.value = nearBottom
 }
 
+// ── CAT terminal panel ──────────────────────────────────────────────────
+// Live terminal showing sent CAT commands and received responses.
+type CatLogLine = {
+  id: number
+  ts: number
+  dir: 'out' | 'in' | 'error'  // out=command sent, in=response received, error=error
+  text: string
+}
+const CAT_LOG_MAX = 300             // ring-buffer cap
+let catLineId = 0
+const CAT_TERMINAL_HEIGHT_KEY = 'cat_terminal_panel_height'
+const CAT_TERMINAL_DEFAULT_HEIGHT = 200  // px
+const catTerminalOpen = ref(false)  // panel visible right now?
+const catLog = ref<CatLogLine[]>([])
+const catAutoScroll = ref(true)
+const catBodyEl = ref<HTMLElement | null>(null)
+const catPanelHeight = ref<number | null>(null)
+const catUserHeight = ref<number | null>(null)
+
+function catAppend(line: Omit<CatLogLine, 'id'>) {
+  const entry: CatLogLine = { id: ++catLineId, ...line }
+  const buf = catLog.value
+  buf.push(entry)
+  if (buf.length > CAT_LOG_MAX) buf.splice(0, buf.length - CAT_LOG_MAX)
+  if (catAutoScroll.value) {
+    nextTick(() => {
+      const el = catBodyEl.value
+      if (el) el.scrollTop = el.scrollHeight
+    })
+  }
+}
+
+function clearCatLog() { catLog.value = []; catLineId = 0 }
+
+function onCatScroll() {
+  const el = catBodyEl.value
+  if (!el) return
+  const nearBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 16
+  catAutoScroll.value = nearBottom
+}
+
+function fmtCatTime(ts: number): string {
+  const d = new Date(ts)
+  const h = String(d.getHours()).padStart(2, '0')
+  const m = String(d.getMinutes()).padStart(2, '0')
+  const s = String(d.getSeconds()).padStart(2, '0')
+  const ms = String(d.getMilliseconds()).padStart(3, '0')
+  return `${h}:${m}:${s}.${ms}`
+}
+
 function fmtRigctldTime(ts: number) {
   const d = new Date(ts)
   return d.toLocaleTimeString(undefined, { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0')
+}
+
+// ── CAT Terminal height management ────────────────────────────────────────
+// Initialize CAT terminal height from localStorage or use default.
+function initCatTerminalHeight() {
+  try {
+    const saved = localStorage.getItem(CAT_TERMINAL_HEIGHT_KEY)
+    catUserHeight.value = saved ? parseInt(saved, 10) : null
+    catPanelHeight.value = catUserHeight.value ?? CAT_TERMINAL_DEFAULT_HEIGHT
+  } catch {
+    catPanelHeight.value = CAT_TERMINAL_DEFAULT_HEIGHT
+  }
+}
+
+// Drag the bottom edge to resize. Pointer-events instead of mouse so
+// it works equally well with touch. Locks `catUserHeight` once the
+// user starts dragging; double-click on the handle reverts to default.
+function onCatResizeStart(e: PointerEvent) {
+  e.preventDefault()
+  const startY = e.clientY
+  const startH = catPanelHeight.value ?? CAT_TERMINAL_DEFAULT_HEIGHT
+  const CAT_MIN_HEIGHT = 100  // px — smallest the user can drag to
+  const onMove = (ev: PointerEvent) => {
+    const next = Math.max(CAT_MIN_HEIGHT, startH + (ev.clientY - startY))
+    catUserHeight.value = next
+    catPanelHeight.value = next
+  }
+  const onEnd = () => {
+    document.removeEventListener('pointermove', onMove)
+    document.removeEventListener('pointerup', onEnd)
+    document.removeEventListener('pointercancel', onEnd)
+    if (catUserHeight.value !== null) {
+      try { localStorage.setItem(CAT_TERMINAL_HEIGHT_KEY, String(catUserHeight.value)) }
+      catch { /* localStorage may be disabled */ }
+    }
+  }
+  document.addEventListener('pointermove', onMove)
+  document.addEventListener('pointerup', onEnd)
+  document.addEventListener('pointercancel', onEnd)
+}
+
+function onCatResizeReset() {
+  catUserHeight.value = null
+  catPanelHeight.value = CAT_TERMINAL_DEFAULT_HEIGHT
+  try { localStorage.removeItem(CAT_TERMINAL_HEIGHT_KEY) } catch { /* ignore */ }
 }
 
 // ── Auto-track the scope panel's outer height while the user has not
@@ -2821,14 +2984,24 @@ async function sendManualCommand() {
   const cmd = manualCmd.value.trim()
   if (!cmd) return
   try {
+    if (catTerminalOpen.value) {
+      catAppend({ ts: Date.now(), dir: 'out', text: cmd })
+    }
     const data = await $fetch<{ response: string | null; state: TransceiverState; error?: string }>(
       '/api/command',
       { method: 'POST', body: { command: cmd, await: true } },
     )
     manualResponse.value = data.response ? `${data.response};` : '(no reply)'
     state.value = data.state
+    if (catTerminalOpen.value) {
+      const respText = data.response ?? '(no reply)'
+      catAppend({ ts: Date.now(), dir: 'in', text: respText })
+    }
   } catch (e: any) {
     lastError.value = e.message
+    if (catTerminalOpen.value) {
+      catAppend({ ts: Date.now(), dir: 'error', text: e.message })
+    }
   }
 }
 
@@ -3350,6 +3523,9 @@ onMounted(async () => {
       }
     }
   } catch { /* ignore */ }
+  // Restore the user's previously-dragged CAT terminal panel height (if any).
+  initCatTerminalHeight()
+
   await Promise.all([refreshPorts(), loadPresets()])
   // Sync with server state (e.g. after page reload while transceiver is already connected)
   const s = await $fetch<TransceiverState>('/api/status')
@@ -4404,6 +4580,30 @@ body {
   white-space: nowrap;
 }
 
+.cmd-terminal-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.cmd-terminal-toggle input {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.cmd-terminal-toggle:hover {
+  color: var(--text);
+}
+
 /* ── Disconnected / radio off ── */
 .dashboard--disconnected {
   opacity: 0.38;
@@ -4688,6 +4888,120 @@ body {
 .rigctld-line--disconnect .rigctld-text { color: #f87171; font-style: italic; }
 
 .rigctld-empty {
+  color: #6b7280;
+  font-style: italic;
+  text-align: center;
+  padding: 20px 0;
+}
+
+/* ── CAT terminal panel ──────────────────────────────────────────────────
+   Live terminal showing sent CAT commands and received responses.
+   Similar styling to rigctld-panel for consistency. */
+.cat-terminal-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 380px;
+  width: 420px;
+  max-width: 100%;
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.cat-terminal-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.cat-terminal-spacer { flex: 1; }
+
+.cat-terminal-icon-btn {
+  font-size: 14px;
+  line-height: 1;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cat-terminal-body {
+  background: #0b0e13;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 4px);
+  padding: 8px 10px;
+  flex: 1 1 auto;                   /* fill remaining space inside .cat-terminal-panel */
+  min-height: 80px;
+  overflow-y: auto;
+  font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: #d1d5db;
+}
+
+.cat-terminal-resize {
+  flex: 0 0 auto;
+  height: 10px;
+  margin: 4px -12px 0 -12px;        /* extend over the panel's side padding */
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  touch-action: none;               /* let pointermove deliver smooth events */
+}
+
+.cat-terminal-resize-grip {
+  width: 36px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background 120ms;
+}
+
+.cat-terminal-resize:hover .cat-terminal-resize-grip,
+.cat-terminal-resize:active .cat-terminal-resize-grip {
+  background: var(--accent, #10b981);
+}
+
+.cat-terminal-line {
+  display: grid;
+  grid-template-columns: 92px 18px 1fr;
+  column-gap: 6px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.cat-terminal-ts {
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+
+.cat-terminal-arrow {
+  text-align: center;
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+.cat-terminal-line--out .cat-terminal-arrow { color: #4ade80; }   /* green — command sent */
+.cat-terminal-line--out .cat-terminal-text  { color: #bbf7d0; }
+
+.cat-terminal-line--in .cat-terminal-arrow  { color: #38bdf8; }   /* cyan — response received */
+.cat-terminal-line--in .cat-terminal-text   { color: #e5e7eb; }
+
+.cat-terminal-line--error .cat-terminal-arrow { color: #f87171; }  /* red — error */
+.cat-terminal-line--error .cat-terminal-text  { color: #fca5a5; }
+
+.cat-terminal-empty {
   color: #6b7280;
   font-style: italic;
   text-align: center;
