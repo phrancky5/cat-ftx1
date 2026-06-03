@@ -3,7 +3,7 @@
 This document lists everything required to build and run the application on a new PC. It covers the **browser + Node.js** workflow used for day-to-day operation (`npm run dev`). Optional Electron packaging is noted at the end.
 
 **Repository:** https://github.com/phrancky5/cat-ftx1  
-**Build label:** `V2.2-NX` (shown in the application header)
+**Build label:** `V2.3-NX` (shown in the application header)
 
 ---
 
@@ -290,6 +290,26 @@ npm install
 # apply any new SQL migrations (see changelog.md)
 npm run dev
 ```
+## Note on update
+if you after git pull an error occurs like this 
+
+Updating 75dad03..a87d786
+error: Your local changes to the following files would be overwritten by merge:
+        cat-channels.json
+        package-lock.json
+        package.json
+Please commit your changes or stash them before you merge.
+Aborting'
+
+the cat-channels.json contains your saved channels. Backup this file and cat-presets.json before update the 'git pull' command.
+Then to overwrite and sync local version with latest run these two commands
+
+git fetch origin
+git reset --hard origin/main
+
+After that copy the 2 files back to application root unless update notes explicitly states they need to be overwritten due to structural change. 
+Then the application can be started with 'npm run dev' or the start1.ps1 script.
+
 
 **Without Git:** use `copy-project.bat` from an up-to-date machine, then `npm install` on the target.
 
