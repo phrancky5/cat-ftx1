@@ -5,6 +5,70 @@ Format: each entry is dated `YYYY-MM-DD HH:MM` (local Europe/Warsaw, UTC+2).
 
 ---
 
+## 2026-06-04 01:00 — Manual CAT Command structured editor; Live CAT Terminal with resize handle
+
+### Added
+
+- **Structured Manual CAT Command Editor** — replaces single text field with preset-style interface:
+  - 2-letter command code field with ▾ category browser (frequency, VFO, mode, etc.)
+  - Parameter field with hints and examples from FTX-1 catalogue
+  - Live preview of transmitted command (e.g., `MD01;`)
+  - Real-time validation (✓ / ⚠ / ✗) using Preset Editor rules
+  - Recent command history (↑) — up to 40 successful commands saved in localStorage, newest first
+  - Enter key sends from code/parameter fields; Esc in history restores draft
+
+- **CAT Command Reference Modal** — full help documentation:
+  - Sortable table of all catalogued commands
+  - Command structure, terminator rules, common mistakes
+  - Click row to load command into editor
+  - Accessible via `?` button in CAT Command card header
+
+- **Live CAT Terminal** with fixed layout and resize handle:
+  - Shows real-time sent commands and received responses
+  - Color-coded entries (green=out, cyan=in, red=error) with timestamps
+  - Auto-scroll behavior: pauses when scrolling up, resumes at bottom
+  - Resizable panel (draggable bottom edge; double-click resets to default)
+  - Panel height persists to localStorage across sessions
+  - Fixed height prevents layout shift of other panels (Saved Channels, Presets)
+
+### Changed
+
+- **Manual CAT Command card layout** — single header row:
+  - CAT Command · ? reference · → response · Live CAT Terminal toggle · Send
+  - Editor body below: code, parameter, preview, validation
+  
+- **Command sending** — automatic normalization:
+  - Input uppercased automatically
+  - Trailing `;` added if missing
+  - Invalid commands block Send button
+  - After successful send, code and parameter fields clear for next command
+
+- **Shared components** — refactored for maintainability:
+  - `ManualCatCommandEditor.vue` — main editor dashboard
+  - `CatCommandPicker.vue` — command browser/category picker
+  - `CatCommandReferenceModal.vue` — help and quick reference modal
+  - `composables/useCatCommandUi.ts` — shared catalogue helpers
+  - Enhanced `cat-commands-ftx1.ts` — `normalizeManualCatCommand()`, `validateManualCatCommand()`, etc.
+
+### Technical notes
+
+- Serial server still appends `;` on wire; UI shows full CAT form operator expects
+- Ring-buffer pattern for terminal log (max 300 entries, oldest removed on overflow)
+- Resize handle implementation mirrors rigctld-panel for visual consistency
+- Terminal height stored in `localStorage` (`cat_terminal_panel_height`) with 200px default
+
+### Files touched
+
+- `pages/index.vue` — main UI updates; CAT terminal state/handlers
+- `components/ManualCatCommandEditor.vue` — new structured editor component
+- `components/CatCommandPicker.vue` — new category browser component
+- `components/CatCommandReferenceModal.vue` — new reference modal component
+- `components/cat-commands-ftx1.ts` — enhanced command catalogue
+- `composables/useCatCommandUi.ts` — new shared helpers
+- `package.json` — version bump to 2.3-NX
+
+---
+
 ## 2026-05-31 23:59 — Dimmed dashboard when disconnected; Nuxt LAN dev fix
 
 ### Added
