@@ -2078,6 +2078,42 @@ export function validateStep(code: string, param: string): ValidationResult {
   return issues.length === 0 ? OK : { level: worst, issues }
 }
 
+/** Command body without the trailing `;` terminator (uppercase, trimmed). */
+export function manualCatCommandBody(raw: string): string {
+  return raw.replace(/;+$/g, '').trim().toUpperCase()
+}
+
+export function parseManualCatCommand(raw: string): { code: string; param: string; body: string } | null {
+  const body = manualCatCommandBody(raw)
+  if (body.length < 2) return null
+  const code = body.substring(0, 2)
+  if (!/^[A-Z]{2}$/.test(code)) return null
+  return { code, param: body.substring(2), body }
+}
+
+/** Uppercase body plus a single trailing `;` (CAT wire/display form). */
+export function normalizeManualCatCommand(raw: string): string {
+  const body = manualCatCommandBody(raw)
+  if (!body) return ''
+  return `${body};`
+}
+
+export function validateManualCatCommand(raw: string): ValidationResult {
+  const parsed = parseManualCatCommand(raw)
+  if (!parsed) {
+    const body = manualCatCommandBody(raw)
+    if (!body) return OK
+    return {
+      level: 'error',
+      issues: [{
+        level: 'error',
+        message: 'Enter a 2-letter CAT command code (e.g. FA, MD01;).',
+      }],
+    }
+  }
+  return validateStep(parsed.code, parsed.param)
+}
+
 // Aggregate validation for an entire preset (for the footer summary).
 export interface StepsValidationSummary {
   errorCount: number

@@ -856,23 +856,14 @@
 
       </div>
 
-      <!-- ── Manual command input ── -->
-      <section class="cmd-section">
-        <span class="cmd-label">CAT Command:</span>
-        <input
-          v-model="manualCmd"
-          class="cmd-input"
-          placeholder="e.g. FA  or  MD01"
-          @keydown.enter="sendManualCommand"
-          spellcheck="false"
-        />
-        <button class="btn btn-primary btn-sm" @click="sendManualCommand">Send</button>
-        <span class="cmd-response" v-if="manualResponse">→ {{ manualResponse }}</span>
-        <label class="cmd-terminal-toggle">
-          <input v-model="catTerminalOpen" type="checkbox" />
-          <span>Live CAT Terminal</span>
-        </label>
-      </section>
+      <!-- ── Manual command input (picker + manual reference like Preset Editor) ── -->
+      <ManualCatCommandEditor
+        ref="manualCmdEditorRef"
+        v-model="manualCmd"
+        v-model:cat-terminal-open="catTerminalOpen"
+        :response="manualResponse"
+        @send="onManualCommandSend"
+      />
     </main>
 
     <!-- ── Connect prompt (over dimmed dashboard before link) ── -->
@@ -1113,6 +1104,7 @@ import StatusBadge from '~/components/StatusBadge.vue'
 import PresetButton from '~/components/PresetButton.vue'
 import MacroBuilder from '~/components/MacroBuilder.vue'
 import PresetBuilder from '~/components/PresetBuilder.vue'
+import ManualCatCommandEditor from '~/components/ManualCatCommandEditor.vue'
 import type { PresetCommandEntry } from '~/components/preset-command-utils'
 
 // Single source of truth for the version label shown in the header.
@@ -1311,6 +1303,10 @@ const connecting = ref(false)
 const lastError = ref<string | null>(null)
 const manualCmd = ref('')
 const manualResponse = ref('')
+const manualCmdEditorRef = ref<{
+  resetFields: () => void
+  recordSentCommand: (wire: string) => void
+} | null>(null)
 const presets = ref<Preset[]>([])
 const funcKnobBusy = ref(false)
 const speechProcBusy = ref(false)
@@ -2980,12 +2976,11 @@ async function setFuncKnob(cmd: string) {
   }
 }
 
-async function sendManualCommand() {
-  const cmd = manualCmd.value.trim()
-  if (!cmd) return
+async function onManualCommandSend(payload: { body: string; wire: string }) {
+  const { body: cmd, wire: normalized } = payload
   try {
     if (catTerminalOpen.value) {
-      catAppend({ ts: Date.now(), dir: 'out', text: cmd })
+      catAppend({ ts: Date.now(), dir: 'out', text: normalized })
     }
     const data = await $fetch<{ response: string | null; state: TransceiverState; error?: string }>(
       '/api/command',
@@ -2997,6 +2992,8 @@ async function sendManualCommand() {
       const respText = data.response ?? '(no reply)'
       catAppend({ ts: Date.now(), dir: 'in', text: respText })
     }
+    manualCmdEditorRef.value?.recordSentCommand(normalized)
+    manualCmdEditorRef.value?.resetFields()
   } catch (e: any) {
     lastError.value = e.message
     if (catTerminalOpen.value) {
@@ -4532,76 +4529,6 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-}
-
-/* ── Manual command ── */
-.cmd-section {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 10px 16px;
-}
-
-.cmd-label {
-  font-size: 12px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  white-space: nowrap;
-}
-
-.cmd-input {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 6px;
-  padding: 5px 10px;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  width: 200px;
-}
-
-.cmd-input:focus { outline: 2px solid var(--accent); }
-
-.cmd-response {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--green);
-  padding: 3px 8px;
-  background: rgba(63,185,80,.08);
-  border-radius: 4px;
-  max-width: 300px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cmd-terminal-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  cursor: pointer;
-  white-space: nowrap;
-  margin-left: auto;
-}
-
-.cmd-terminal-toggle input {
-  cursor: pointer;
-  width: 16px;
-  height: 16px;
-  accent-color: var(--accent);
-}
-
-.cmd-terminal-toggle:hover {
-  color: var(--text);
 }
 
 /* ── Disconnected / radio off ── */
