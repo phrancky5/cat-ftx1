@@ -41,7 +41,7 @@ export default defineNuxtConfig({
       // Single source of truth for the version label shown in the header.
       // Bump here when forking / releasing; the UI reads it via useRuntimeConfig().
       // Overridable at runtime via the NUXT_PUBLIC_APP_VERSION env var.
-      appVersion: 'V2.2-NX',
+      appVersion: 'V2.3-NX',
     },
   },
 })
